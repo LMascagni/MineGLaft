@@ -1,0 +1,10 @@
+# depslib dependency file v1.0
+1738725870 source:c:\users\loren\documents\00-privata\repo\mineglaft\main.cpp
+	<GL/glut.h>
+	<cmath>
+	<vector>
+	<iostream>
+	<string>
+	<chrono>
+	<algorithm>
+
