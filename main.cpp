@@ -4,6 +4,9 @@
 #include <GL/glut.h>
 #include <cmath>
 #include <vector>
+#include <unordered_map>
+#include <functional>
+#include <array>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -75,6 +78,11 @@ class Point2D
 public:
     float x, z;
     Point2D(float xPos = 0.0f, float zPos = 0.0f) : x(xPos), z(zPos) {}
+
+    bool operator==(const Point2D& other) const
+    {
+        return (x == other.x && z == other.z);
+    }
 };
 
 // Classe Inclinazione
@@ -151,13 +159,49 @@ public:
 
     Block(Point3D position = Point3D(0.0f, 0.0f, 0.0f), float scaleFactor = 0.0f, Rotation rotation = Rotation(0.0f, 0.0f, 0.0f), BlockType blockType = BlockType::_VOID) : pos(position), scale(scaleFactor), rot(rotation), type(blockType)
     {
-        // Inizializza le facce con valori predefiniti
-        faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(1.0f, 0.0f, 1.0f)); // Fronte (Magenta)
-        faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.0f, 1.0f, 0.0f)); // Dietro (Verde)
-        faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(1.0f, 0.0f, 0.0f)); // Sinistra (Rosso)
-        faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.0f, 1.0f, 1.0f)); // Destra (Ciano)
-        faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.0f, 1.0f)); // Sopra (Blu)
-        faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(1.0f, 1.0f, 0.0f)); // Sotto (Giallo)
+        switch (type)
+        {
+        case BlockType::STONE:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            break;
+        }
+        case BlockType::DIRT:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.5f, 0.0f));  // Verde
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            break;
+        }
+        case BlockType::TEST:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(1.0f, 0.0f, 1.0f)); // Magenta
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.0f, 1.0f, 0.0f)); // Verde
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(1.0f, 0.0f, 0.0f)); // Rosso
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.0f, 1.0f, 1.0f)); // Ciano
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.0f, 1.0f)); // Blu
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(1.0f, 1.0f, 0.0f)); // Giallo
+            break;
+        }
+        default:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            break;
+        }
+        }
     }
     void draw(const Chunk& chunk) const;
 
@@ -170,11 +214,38 @@ class Chunk
 public:
     Point2D pos;
     std::vector<std::vector<std::vector<Block>>> blocks;
+
+    // Costruttore predefinito
+    Chunk();
+
+    // Costruttore con posizione
     Chunk(Point2D position);
+
     void draw() const;
     bool isBlock(Point3D pos) const;
     void addBlock(const Point3D& blockPos, BlockType type);
     void updateAdjacentBlocks(const Point3D& blockPos);
+};
+
+namespace std
+{
+template <>
+struct hash<Point2D>
+{
+    size_t operator()(const Point2D& p) const
+    {
+        // Combinazione hash delle coordinate x e z
+        return hash<float>()(p.x) ^ (hash<float>()(p.z) << 1);
+    }
+};
+}
+
+class World
+{
+public:
+    std::unordered_map<Point2D, Chunk> chunksMap;
+    int generationSeed;
+    Point3D spawnPoint;
 };
 
 // ================================
@@ -185,7 +256,7 @@ void addChunk(Point2D pos);
 float toRadians(float degrees);
 bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect);
 void display();
-void drawText(const std::string& text, Point2D pos, void* font = GLUT_BITMAP_HELVETICA_18);
+void drawText(const std::string& text, Point2D pos, void* font = GLUT_BITMAP_HELVETICA_10);
 Point2D getChunkCoordinates(const Point3D pos);
 Chunk* getChunk(Point2D pos);
 void keyboard(unsigned char key, int x, int y);
@@ -199,10 +270,11 @@ void placeBlock();
 // VARIABILI GLOBALI
 // ================================
 Camera camera;
-std::vector<Chunk> chunks;
-
-bool showChunkBorder = false;
-bool showData = false;
+World world;
+bool showChunkBorder = true;
+bool showData = true;
+bool showTopFace = true;
+bool enableFaceOptimization = true;
 
 int lastMouseX = 0, lastMouseY = 0; // Variabili globali per tracciare la posizione precedente del mouse
 // Variabili globali per il calcolo degli FPS
@@ -246,10 +318,11 @@ void init()
     glClearColor(0.2f, 0.2f, 0.2f, 1.0f); // Colore di sfondo grigio scuro
     camera.reset();
 
+    int dim = 5;
     // Aggiungi chunk con coordinate positive e negative
-    for (int i = -2; i <= 2; i++)
+    for (int i = -dim; i <= dim; i++)
     {
-        for (int j = -2; j <= 2; j++)
+        for (int j = -dim; j <= dim; j++)
         {
             addChunk(Point2D(i, j));
         }
@@ -258,7 +331,7 @@ void init()
 
 void Camera::reset()
 {
-    pos = Point3D(-48.0f, 110.0f, -48.0f);
+    pos = Point3D(-4 * CHUNK_SIZE, 10 * CHUNK_SIZE, -4 * CHUNK_SIZE);
     rot = Rotation(-30.0f, 45.0f, 0.0f);
     glutPostRedisplay();
 }
@@ -274,15 +347,11 @@ void Block::draw(const Chunk& chunk) const
     glRotatef(rot.xRot, 1.0f, 0.0f, 0.0f); // Rotazione attorno all'asse X
     glRotatef(rot.yRot, 0.0f, 1.0f, 0.0f); // Rotazione attorno all'asse Y
     glRotatef(rot.zRot, 0.0f, 0.0f, 1.0f); // Rotazione attorno all'asse Z
-/*
-    int bloccoX = static_cast<int>(pos.x - chunk.pos.x);
-    int bloccoZ = static_cast<int>(pos.z - chunk.pos.z);
-    int bloccoY = static_cast<int>(pos.y);
-*/
+
     glBegin(GL_QUADS);
 
-    // Fronte (Magenta)
-    if (faces[static_cast<int>(FaceType::FRONT)].isVisible && isFaceVisible(pos, Point3D(0.0f, 0.0f, 1.0f)))
+    // Fronte
+    if (faces[static_cast<int>(FaceType::FRONT)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, 1.0f)) || !enableFaceOptimization))
     {
         faces[static_cast<int>(FaceType::FRONT)].color.apply();
         glVertex3f(-0.5f, -0.5f, 0.5f);
@@ -291,8 +360,8 @@ void Block::draw(const Chunk& chunk) const
         glVertex3f(-0.5f, 0.5f, 0.5f);
     }
 
-    // Dietro (Verde)
-    if (faces[static_cast<int>(FaceType::BACK)].isVisible && isFaceVisible(pos, Point3D(0.0f, 0.0f, -1.0f)))
+    // Dietro
+    if (faces[static_cast<int>(FaceType::BACK)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, -1.0f)) || !enableFaceOptimization))
     {
         faces[static_cast<int>(FaceType::BACK)].color.apply();
         glVertex3f(-0.5f, -0.5f, -0.5f);
@@ -301,8 +370,8 @@ void Block::draw(const Chunk& chunk) const
         glVertex3f(-0.5f, 0.5f, -0.5f);
     }
 
-    // Sinistra (Rosso)
-    if (faces[static_cast<int>(FaceType::LEFT)].isVisible && isFaceVisible(pos, Point3D(-1.0f, 0.0f, 0.0f)))
+    // Sinistra
+    if (faces[static_cast<int>(FaceType::LEFT)].isVisible && (isFaceVisible(pos, Point3D(-1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
         faces[static_cast<int>(FaceType::LEFT)].color.apply();
         glVertex3f(-0.5f, -0.5f, -0.5f);
@@ -311,8 +380,8 @@ void Block::draw(const Chunk& chunk) const
         glVertex3f(-0.5f, 0.5f, -0.5f);
     }
 
-    // Destra (Ciano)
-    if (faces[static_cast<int>(FaceType::RIGHT)].isVisible && isFaceVisible(pos, Point3D(1.0f, 0.0f, 0.0f)))
+    // Destra
+    if (faces[static_cast<int>(FaceType::RIGHT)].isVisible && (isFaceVisible(pos, Point3D(1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
         faces[static_cast<int>(FaceType::RIGHT)].color.apply();
         glVertex3f(0.5f, -0.5f, -0.5f);
@@ -321,8 +390,8 @@ void Block::draw(const Chunk& chunk) const
         glVertex3f(0.5f, 0.5f, -0.5f);
     }
 
-    // Sopra (Blu)
-    if (faces[static_cast<int>(FaceType::TOP)].isVisible && isFaceVisible(pos, Point3D(0.0f, 1.0f, 0.0f)))
+    // Sopra
+    if (faces[static_cast<int>(FaceType::TOP)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 1.0f, 0.0f)) || !enableFaceOptimization) && showTopFace)
     {
         faces[static_cast<int>(FaceType::TOP)].color.apply();
         glVertex3f(-0.5f, 0.5f, -0.5f);
@@ -331,8 +400,8 @@ void Block::draw(const Chunk& chunk) const
         glVertex3f(-0.5f, 0.5f, 0.5f);
     }
 
-    // Sotto (Giallo)
-    if (faces[static_cast<int>(FaceType::BOTTOM)].isVisible && isFaceVisible(pos, Point3D(0.0f, -1.0f, 0.0f)))
+    // Sotto
+    if (faces[static_cast<int>(FaceType::BOTTOM)].isVisible && (isFaceVisible(pos, Point3D(0.0f, -1.0f, 0.0f)) || !enableFaceOptimization))
     {
         faces[static_cast<int>(FaceType::BOTTOM)].color.apply();
         glVertex3f(-0.5f, -0.5f, -0.5f);
@@ -361,14 +430,19 @@ bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect)
 
 void addChunk(Point2D pos)
 {
-    chunks.emplace_back(pos);
+    world.chunksMap[pos] = Chunk(pos);
+    std::cout << "chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
 }
+// Costruttore predefinito
+Chunk::Chunk() : pos(Point2D(0, 0)) {}
 
-// Costruttore di Chunk
+// Costruttore con posizione
+// Costruttore con posizione
 Chunk::Chunk(Point2D position) : pos(Point2D(position.x * CHUNK_SIZE, position.z * CHUNK_SIZE))
 {
     blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT)));
 
+    // Passo 1: Crea tutti i blocchi
     for (int x = 0; x < CHUNK_SIZE; ++x)
     {
         for (int z = 0; z < CHUNK_SIZE; ++z)
@@ -378,27 +452,33 @@ Chunk::Chunk(Point2D position) : pos(Point2D(position.x * CHUNK_SIZE, position.z
                 float posX = pos.x + x;
                 float posY = static_cast<float>(y);
                 float posZ = pos.z + z;
+                BlockType blockType = (posY > (CHUNK_HEIGHT / 2) + pos.x/CHUNK_SIZE + pos.z/CHUNK_SIZE) ? BlockType::AIR : BlockType::TEST;
+                blocks[x][z][y] = Block(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), blockType);
+            }
+        }
+    }
 
-                BlockType blockType = (posY > (CHUNK_HEIGHT / 2) + x + z) ? BlockType::AIR : BlockType::TEST;
-
-                // Crea il blocco
-                Block newBlock(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), blockType);
-
-                if (blockType != BlockType::AIR && blockType != BlockType::_VOID)
+    // Passo 2: Aggiorna la visibilità delle facce
+    for (int x = 0; x < CHUNK_SIZE; ++x)
+    {
+        for (int z = 0; z < CHUNK_SIZE; ++z)
+        {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
+            {
+                Block& currentBlock = blocks[x][z][y];
+                if (currentBlock.type == BlockType::AIR || currentBlock.type == BlockType::_VOID)
                 {
-                    // Imposta la visibilità delle facce basandosi sui blocchi adiacenti
-                    newBlock.setFaceVisibility(FaceType::FRONT, !isBlock(Point3D(posX, posY, posZ + 1)));
-                    newBlock.setFaceVisibility(FaceType::BACK, !isBlock(Point3D(posX, posY, posZ - 1)));
-                    newBlock.setFaceVisibility(FaceType::LEFT, !isBlock(Point3D(posX - 1, posY, posZ)));
-                    newBlock.setFaceVisibility(FaceType::RIGHT, !isBlock(Point3D(posX + 1, posY, posZ)));
-                    newBlock.setFaceVisibility(FaceType::TOP, !isBlock(Point3D(posX, posY + 1, posZ)));
-                    newBlock.setFaceVisibility(FaceType::BOTTOM, !isBlock(Point3D(posX, posY - 1, posZ)));
-
-                    // Aggiorna le facce dei blocchi adiacenti
-                    updateAdjacentBlocks(Point3D(posX, posY, posZ));
+                    continue; // Ignora i blocchi vuoti
                 }
 
-                blocks[x][z][y] = newBlock;
+                currentBlock.setFaceVisibility(FaceType::FRONT,  !isBlock(Point3D(pos.x + x, y, pos.z + z + 1)));
+                currentBlock.setFaceVisibility(FaceType::BACK,   !isBlock(Point3D(pos.x + x, y, pos.z + z - 1)));
+                currentBlock.setFaceVisibility(FaceType::LEFT,   !isBlock(Point3D(pos.x + x - 1, y, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::RIGHT,  !isBlock(Point3D(pos.x + x + 1, y, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::TOP,    !isBlock(Point3D(pos.x + x, y + 1, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::BOTTOM, !isBlock(Point3D(pos.x + x, y - 1, pos.z + z)));
+
+                updateAdjacentBlocks(Point3D(pos.x + x, y, pos.z + z));
             }
         }
     }
@@ -442,7 +522,9 @@ void Chunk::addBlock(const Point3D& blockPos, BlockType type)
     int localZ = static_cast<int>(blockPos.z - pos.z);
     int localY = static_cast<int>(blockPos.y);
 
-    if (localX < 0 || localX >= CHUNK_SIZE || localZ < 0 || localZ >= CHUNK_SIZE || localY < 0 || localY >= CHUNK_HEIGHT)
+    if (localX < 0 || localX >= CHUNK_SIZE ||
+            localZ < 0 || localZ >= CHUNK_SIZE ||
+            localY < 0 || localY >= CHUNK_HEIGHT)
     {
         return; // Posizione fuori dai limiti del chunk
     }
@@ -467,7 +549,8 @@ void Chunk::addBlock(const Point3D& blockPos, BlockType type)
 
 void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
 {
-    std::vector<Point3D> directions = {
+    std::vector<Point3D> directions =
+    {
         Point3D(0, 0, 1),  // Fronte
         Point3D(0, 0, -1), // Dietro
         Point3D(-1, 0, 0), // Sinistra
@@ -476,35 +559,40 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
         Point3D(0, -1, 0)  // Sotto
     };
 
-    for (const auto& dir : directions)
+    static const std::array<FaceType, 6> oppositeFaces =
     {
-        Point3D adjPos(blockPos.x + dir.x, blockPos.y + dir.y, blockPos.z + dir.z);
+        FaceType::BACK, FaceType::FRONT, FaceType::RIGHT, FaceType::LEFT, FaceType::BOTTOM, FaceType::TOP
+    };
 
-        // Verifica se il blocco adiacente esiste
-        if (isBlock(adjPos))
+    auto updateBlock = [&](Block& block, size_t directionIndex)
+    {
+        if (block.type != BlockType::_VOID && block.type != BlockType::AIR)
         {
-            int adjLocalX = static_cast<int>(adjPos.x - pos.x);
-            int adjLocalZ = static_cast<int>(adjPos.z - pos.z);
-            int adjLocalY = static_cast<int>(adjPos.y);
+            block.setFaceVisibility(oppositeFaces[directionIndex], false);
+        }
+    };
 
-            // Normalizza le coordinate locali
-            adjLocalX = ((adjLocalX + CHUNK_SIZE) % CHUNK_SIZE + CHUNK_SIZE) % CHUNK_SIZE;
-            adjLocalZ = ((adjLocalZ + CHUNK_SIZE) % CHUNK_SIZE + CHUNK_SIZE) % CHUNK_SIZE;
+    for (size_t i = 0; i < directions.size(); ++i)
+    {
+        Point3D adjacentPos = blockPos + directions[i];
+        Point2D adjacentChunkCoords = getChunkCoordinates(adjacentPos);
 
-            if (adjLocalX >= 0 && adjLocalX < CHUNK_SIZE &&
+        // Recupera il chunk adiacente dalla mappa
+        Chunk* adjacentChunk = getChunk(adjacentChunkCoords);
+        if (!adjacentChunk)
+        {
+            continue; // Il chunk adiacente non esiste
+        }
+
+        int adjLocalX = static_cast<int>(adjacentPos.x - (adjacentChunkCoords.x * CHUNK_SIZE));
+        int adjLocalZ = static_cast<int>(adjacentPos.z - (adjacentChunkCoords.z * CHUNK_SIZE));
+        int adjLocalY = static_cast<int>(adjacentPos.y);
+
+        if (adjLocalX >= 0 && adjLocalX < CHUNK_SIZE &&
                 adjLocalZ >= 0 && adjLocalZ < CHUNK_SIZE &&
                 adjLocalY >= 0 && adjLocalY < CHUNK_HEIGHT)
-            {
-                Block& adjBlock = blocks[adjLocalX][adjLocalZ][adjLocalY];
-
-                // Determina la faccia da nascondere/sblocchiare
-                if (dir == Point3D(0, 0, 1)) adjBlock.setFaceVisibility(FaceType::BACK, false);
-                if (dir == Point3D(0, 0, -1)) adjBlock.setFaceVisibility(FaceType::FRONT, false);
-                if (dir == Point3D(-1, 0, 0)) adjBlock.setFaceVisibility(FaceType::RIGHT, false);
-                if (dir == Point3D(1, 0, 0)) adjBlock.setFaceVisibility(FaceType::LEFT, false);
-                if (dir == Point3D(0, 1, 0)) adjBlock.setFaceVisibility(FaceType::BOTTOM, false);
-                if (dir == Point3D(0, -1, 0)) adjBlock.setFaceVisibility(FaceType::TOP, false);
-            }
+        {
+            updateBlock(adjacentChunk->blocks[adjLocalX][adjLocalZ][adjLocalY], i);
         }
     }
 }
@@ -512,13 +600,9 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
 // Funzione per ottenere un chunk specifico
 Chunk* getChunk(Point2D pos)
 {
-    for (auto& chunk : chunks)
+    if (world.chunksMap.find(pos) != world.chunksMap.end())
     {
-        Point2D currentChunk = getChunkCoordinates(Point3D(chunk.pos.x, 0.0f, chunk.pos.z));
-        if (currentChunk.x == pos.x && currentChunk.z == pos.z)
-        {
-            return &chunk;
-        }
+        return &world.chunksMap[pos];
     }
     return nullptr; // Chunk non trovato
 }
@@ -530,46 +614,39 @@ bool Chunk::isBlock(Point3D blockPos) const
     int localZ = static_cast<int>(blockPos.z - pos.z);
     int localY = static_cast<int>(blockPos.y);
 
-    // Normalizza le coordinate locali per gestire i casi negativi
-    localX = ((localX + CHUNK_SIZE) % CHUNK_SIZE + CHUNK_SIZE) % CHUNK_SIZE;
-    localZ = ((localZ + CHUNK_SIZE) % CHUNK_SIZE + CHUNK_SIZE) % CHUNK_SIZE;
-
-    // Verifica se le coordinate locali sono valide
+    // Verifica se il blocco è all'interno del chunk corrente
     if (localX >= 0 && localX < CHUNK_SIZE &&
-        localZ >= 0 && localZ < CHUNK_SIZE &&
-        localY >= 0 && localY < CHUNK_HEIGHT)
+            localZ >= 0 && localZ < CHUNK_SIZE &&
+            localY >= 0 && localY < CHUNK_HEIGHT)
     {
-        return (blocks[localX][localZ][localY].type != BlockType::_VOID &&
-                blocks[localX][localZ][localY].type != BlockType::AIR);
+        return (blocks[localX][localZ][localY].type != BlockType::_VOID && blocks[localX][localZ][localY].type != BlockType::AIR);
     }
 
-    // Se il blocco non è nel chunk corrente, controlla nei chunk adiacenti
-    int globalX = static_cast<int>(pos.x) + localX;
-    int globalZ = static_cast<int>(pos.z) + localZ;
+    // Se il blocco non è nel chunk corrente, calcola le coordinate del chunk adiacente
+    Point2D adjacentChunkCoords = getChunkCoordinates(blockPos);
+    Chunk* targetChunk = getChunk(adjacentChunkCoords);
 
-    int chunkX = static_cast<int>(std::floor(globalX / static_cast<float>(CHUNK_SIZE)));
-    int chunkZ = static_cast<int>(std::floor(globalZ / static_cast<float>(CHUNK_SIZE)));
-
-    Chunk* targetChunk = getChunk(Point2D(chunkX, chunkZ));
+    // Se il chunk adiacente non esiste, considera il blocco come non presente
     if (!targetChunk)
     {
-        return false; // Il chunk non esiste
+        return false;
     }
 
-    // Calcola le coordinate locali nel chunk trovato
-    int adjLocalX = ((globalX - (chunkX * CHUNK_SIZE)) + CHUNK_SIZE) % CHUNK_SIZE;
-    int adjLocalZ = ((globalZ - (chunkZ * CHUNK_SIZE)) + CHUNK_SIZE) % CHUNK_SIZE;
+    // Calcola le coordinate locali nel chunk adiacente
+    int adjLocalX = static_cast<int>(blockPos.x - (adjacentChunkCoords.x * CHUNK_SIZE));
+    int adjLocalZ = static_cast<int>(blockPos.z - (adjacentChunkCoords.z * CHUNK_SIZE));
 
-    // Verifica se le coordinate locali sono valide
+    // Verifica se le coordinate locali sono valide nel chunk adiacente
     if (adjLocalX >= 0 && adjLocalX < CHUNK_SIZE &&
-        adjLocalZ >= 0 && adjLocalZ < CHUNK_SIZE &&
-        blockPos.y >= 0 && blockPos.y < CHUNK_HEIGHT)
+            adjLocalZ >= 0 && adjLocalZ < CHUNK_SIZE &&
+            blockPos.y >= 0 && blockPos.y < CHUNK_HEIGHT)
     {
         return (targetChunk->blocks[adjLocalX][adjLocalZ][static_cast<int>(blockPos.y)].type != BlockType::_VOID &&
                 targetChunk->blocks[adjLocalX][adjLocalZ][static_cast<int>(blockPos.y)].type != BlockType::AIR);
     }
 
-    return false; // Blocco non esiste
+    // Se il blocco non è valido, restituisci false
+    return false;
 }
 
 Point2D getChunkCoordinates(const Point3D pos)
@@ -627,26 +704,21 @@ void display()
 
     gluLookAt(
         camera.pos.x, camera.pos.y, camera.pos.z, // Posizione della camera
-        lookX, lookY, lookZ,                     // Punto di guardia
-        0.0f, 1.0f, 0.0f                        // Vettore "up"
+        lookX, lookY, lookZ,                      // Punto di guardia
+        0.0f, 1.0f, 0.0f                          // Vettore "up"
     );
 
-
-
-    for (const auto& chunk : chunks)
+    // Itera sui chunk nella mappa
+    for (const auto& [chunkPos, chunk] : world.chunksMap)
     {
         chunk.draw();
-
-        if(showChunkBorder)
+        if (showChunkBorder)
         {
             // Disegna le linee verticali grigie che delimitano i chunk
             glColor3f(0.5f, 0.5f, 0.5f); // Grigio
-            glLineWidth(2.0f); // Spessore delle linee
-
+            glLineWidth(2.0f);          // Spessore delle linee
             glBegin(GL_LINES);
-
             float lineHeight = 500.0f;
-
             float xMin = chunk.pos.x - 0.5f;
             float xMax = chunk.pos.x + CHUNK_SIZE - 0.5f;
             float zMin = chunk.pos.z - 0.5f;
@@ -672,8 +744,7 @@ void display()
         }
     }
 
-
-    if(showData)
+    if (showData)
     {
         // Disegna il testo sullo schermo
         glMatrixMode(GL_PROJECTION);
@@ -683,15 +754,13 @@ void display()
         glMatrixMode(GL_MODELVIEW);
         glPushMatrix(); // Salva la matrice corrente
         glLoadIdentity();
-
         glColor3f(1.0f, 1.0f, 1.0f); // Bianco
 
-        drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30));
-
-        drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, 30));
-        drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, 60));
+        drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
+        drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, 15));
+        drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, 30));
         Point2D chunkCoords = getChunkCoordinates(camera.pos);
-        drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, 90));
+        drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, 45));
 
         glPopMatrix(); // Ripristina la matrice modelview
         glMatrixMode(GL_PROJECTION);
@@ -730,8 +799,8 @@ void placeBlock()
     if (!targetChunk)
     {
         // Se il chunk non esiste, crealo prima di aggiungere il blocco
-        addChunk(chunkCoordinates);
-        targetChunk = getChunk(chunkCoordinates);
+        //addChunk(chunkCoordinates);
+        //targetChunk = getChunk(chunkCoordinates);
 
         if (!targetChunk)
         {
@@ -787,6 +856,13 @@ void keyboard(unsigned char key, int, int)
     case 'n':
         showData = !showData;
         break;
+    case 'e':
+        showTopFace = !showTopFace;
+        break;
+    case 'm':
+        enableFaceOptimization = !enableFaceOptimization;
+        break;
+
     case 'p':
         placeBlock();
         break;
