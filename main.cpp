@@ -4,6 +4,7 @@
 #include <GL/glut.h>
 #include <cmath>
 #include <vector>
+#include <random>
 #include <unordered_map>
 #include <functional>
 #include <array>
@@ -23,6 +24,88 @@ const int RENDER_DISTANCE = 5;  // Distanza di rendering
 // ================================
 // STRUTTURE E CLASSI
 // ================================
+
+//classe per generare il rumore
+#include <vector>
+#include <cmath>
+#include <random>
+
+class PerlinNoise {
+private:
+    int seed;
+    std::vector<int> permutation;
+
+    // Funzione per generare una tabella di permutazione pseudocasuale
+    void generatePermutation() {
+        std::mt19937 generator(seed);
+        permutation.resize(256);
+        for (int i = 0; i < 256; ++i) {
+            permutation[i] = i;
+        }
+        std::shuffle(permutation.begin(), permutation.end(), generator);
+    }
+
+    // Funzione per interpolare con un polinomio smoothstep
+    float smoothstep(float t) const {
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    // Funzione per interpolare linearmente tra due valori
+    float lerp(float a, float b, float t) const {
+        return a + t * (b - a);
+    }
+
+    // Funzione per ottenere il gradiente in un punto della griglia
+    float gradient(int hash, float x, float y, float z) const {
+        hash = hash & 15; // Limita hash a 0-15
+        float u = (hash < 8) ? x : y;
+        float v = (hash < 4) ? y : ((hash == 12 || hash == 14) ? x : z);
+        return ((hash & 1) == 0 ? u : -u) + ((hash & 2) == 0 ? v : -v);
+    }
+
+public:
+    PerlinNoise(int seedValue) : seed(seedValue) {
+        generatePermutation();
+    }
+
+    // Funzione principale per calcolare il Perlin Noise
+    float getNoise(float x, float y, float z) const {
+        // Trova la cella della griglia contenente il punto (x, y, z)
+        int X = static_cast<int>(std::floor(x)) & 255;
+        int Y = static_cast<int>(std::floor(y)) & 255;
+        int Z = static_cast<int>(std::floor(z)) & 255;
+
+        x -= std::floor(x);
+        y -= std::floor(y);
+        z -= std::floor(z);
+
+        // Interpolazione smoothstep
+        float u = smoothstep(x);
+        float v = smoothstep(y);
+        float w = smoothstep(z);
+
+        // Hash delle coordinate della griglia
+        int A = permutation[X] + Y;
+        int AA = permutation[A] + Z;
+        int AB = permutation[A + 1] + Z;
+        int B = permutation[X + 1] + Y;
+        int BA = permutation[B] + Z;
+        int BB = permutation[B + 1] + Z;
+
+        // Combina i risultati dei gradienti
+        float res = lerp(
+            lerp(
+                lerp(gradient(permutation[AA], x, y, z), gradient(permutation[BA], x - 1, y, z), u),
+                lerp(gradient(permutation[AB], x, y - 1, z), gradient(permutation[BB], x - 1, y - 1, z), u), v),
+            lerp(
+                lerp(gradient(permutation[AA + 1], x, y, z - 1), gradient(permutation[BA + 1], x - 1, y, z - 1), u),
+                lerp(gradient(permutation[AB + 1], x, y - 1, z - 1), gradient(permutation[BB + 1], x - 1, y - 1, z - 1), u), v),
+            w);
+
+        return res;
+    }
+};
+
 // Classe Punto
 class Point3D
 {
@@ -177,7 +260,7 @@ public:
             faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
             faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
             faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
-            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.5f, 0.0f));  // Verde
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.50f, 0.0f)); // Verde
             faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
             break;
         }
@@ -219,7 +302,7 @@ public:
     Chunk();
 
     // Costruttore con posizione
-    Chunk(Point2D position);
+    Chunk(Point2D position, int seed);
 
     void draw() const;
     bool isBlock(Point3D pos) const;
@@ -270,18 +353,15 @@ void placeBlock();
 // VARIABILI GLOBALI
 // ================================
 Camera camera;
-World world;
+World world; // Dichiarazione della variabile globale
 bool showChunkBorder = true;
 bool showData = true;
 bool showTopFace = true;
 bool enableFaceOptimization = true;
-
 int lastMouseX = 0, lastMouseY = 0; // Variabili globali per tracciare la posizione precedente del mouse
 // Variabili globali per il calcolo degli FPS
 std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
 float fps = 0.0f;
-
-
 
 // ================================
 // FUNZIONE PRINCIPALE
@@ -316,13 +396,29 @@ void init()
 {
     glEnable(GL_DEPTH_TEST); // Abilita il test di profondità
     glClearColor(0.2f, 0.2f, 0.2f, 1.0f); // Colore di sfondo grigio scuro
-    camera.reset();
 
-    int dim = 5;
-    // Aggiungi chunk con coordinate positive e negative
-    for (int i = -dim; i <= dim; i++)
+    // Abilita l'illuminazione e la prima sorgente di luce
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    // Configura la sorgente di luce
+    float lightPosition[] = { 50.0f, 50.0f, 50.0f, 1.0f }; // Posizione della luce
+    float ambientLight[] = { 0.2f, 0.2f, 0.2f, 1.0f };     // Luce ambiente
+    float diffuseLight[] = { 0.8f, 0.8f, 0.8f, 1.0f };     // Luce diffusa
+    float specularLight[] = { 0.5f, 0.5f, 0.5f, 1.0f };    // Luce speculare
+
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
+
+    camera.reset();
+    world.generationSeed = 12345; // Seme per la generazione del mondo
+
+    int dim = 3;
+    for (int i = 0; i <= dim * 2; i++)
     {
-        for (int j = -dim; j <= dim; j++)
+        for (int j = 0; j <= dim * 2; j++)
         {
             addChunk(Point2D(i, j));
         }
@@ -344,16 +440,20 @@ void Block::draw(const Chunk& chunk) const
     glPushMatrix();
     glTranslatef(pos.x, pos.y, pos.z);
     glScalef(scale, scale, scale);
-    glRotatef(rot.xRot, 1.0f, 0.0f, 0.0f); // Rotazione attorno all'asse X
-    glRotatef(rot.yRot, 0.0f, 1.0f, 0.0f); // Rotazione attorno all'asse Y
-    glRotatef(rot.zRot, 0.0f, 0.0f, 1.0f); // Rotazione attorno all'asse Z
 
     glBegin(GL_QUADS);
 
     // Fronte
     if (faces[static_cast<int>(FaceType::FRONT)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, 1.0f)) || !enableFaceOptimization))
     {
-        faces[static_cast<int>(FaceType::FRONT)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::FRONT)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f }; // Usa il colore della faccia con un fattore di emissione ridotto
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f }; // Piccola componente ambientale
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f }; // Piccola componente diffusa
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission); // Imposta emissione
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);   // Imposta ambiente
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);   // Imposta diffuso
+        glNormal3f(0.0f, 0.0f, 1.0f); // Normale per la faccia frontale
         glVertex3f(-0.5f, -0.5f, 0.5f);
         glVertex3f(0.5f, -0.5f, 0.5f);
         glVertex3f(0.5f, 0.5f, 0.5f);
@@ -363,7 +463,14 @@ void Block::draw(const Chunk& chunk) const
     // Dietro
     if (faces[static_cast<int>(FaceType::BACK)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, -1.0f)) || !enableFaceOptimization))
     {
-        faces[static_cast<int>(FaceType::BACK)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::BACK)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f };
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f };
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+        glNormal3f(0.0f, 0.0f, -1.0f); // Normale per la faccia posteriore
         glVertex3f(-0.5f, -0.5f, -0.5f);
         glVertex3f(0.5f, -0.5f, -0.5f);
         glVertex3f(0.5f, 0.5f, -0.5f);
@@ -373,7 +480,14 @@ void Block::draw(const Chunk& chunk) const
     // Sinistra
     if (faces[static_cast<int>(FaceType::LEFT)].isVisible && (isFaceVisible(pos, Point3D(-1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
-        faces[static_cast<int>(FaceType::LEFT)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::LEFT)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f };
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f };
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+        glNormal3f(-1.0f, 0.0f, 0.0f); // Normale per la faccia sinistra
         glVertex3f(-0.5f, -0.5f, -0.5f);
         glVertex3f(-0.5f, -0.5f, 0.5f);
         glVertex3f(-0.5f, 0.5f, 0.5f);
@@ -383,7 +497,14 @@ void Block::draw(const Chunk& chunk) const
     // Destra
     if (faces[static_cast<int>(FaceType::RIGHT)].isVisible && (isFaceVisible(pos, Point3D(1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
-        faces[static_cast<int>(FaceType::RIGHT)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::RIGHT)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f };
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f };
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+        glNormal3f(1.0f, 0.0f, 0.0f); // Normale per la faccia destra
         glVertex3f(0.5f, -0.5f, -0.5f);
         glVertex3f(0.5f, -0.5f, 0.5f);
         glVertex3f(0.5f, 0.5f, 0.5f);
@@ -393,7 +514,14 @@ void Block::draw(const Chunk& chunk) const
     // Sopra
     if (faces[static_cast<int>(FaceType::TOP)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 1.0f, 0.0f)) || !enableFaceOptimization) && showTopFace)
     {
-        faces[static_cast<int>(FaceType::TOP)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::TOP)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f };
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f };
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+        glNormal3f(0.0f, 1.0f, 0.0f); // Normale per la faccia superiore
         glVertex3f(-0.5f, 0.5f, -0.5f);
         glVertex3f(0.5f, 0.5f, -0.5f);
         glVertex3f(0.5f, 0.5f, 0.5f);
@@ -403,13 +531,19 @@ void Block::draw(const Chunk& chunk) const
     // Sotto
     if (faces[static_cast<int>(FaceType::BOTTOM)].isVisible && (isFaceVisible(pos, Point3D(0.0f, -1.0f, 0.0f)) || !enableFaceOptimization))
     {
-        faces[static_cast<int>(FaceType::BOTTOM)].color.apply();
+        const Color& faceColor = faces[static_cast<int>(FaceType::BOTTOM)].color;
+        float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
+        float ambient[] = { faceColor.r * 0.2f, faceColor.g * 0.2f, faceColor.b * 0.2f, 1.0f };
+        float diffuse[] = { faceColor.r * 0.5f, faceColor.g * 0.5f, faceColor.b * 0.5f, 1.0f };
+        glMaterialfv(GL_FRONT, GL_EMISSION, emission);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
+        glNormal3f(0.0f, -1.0f, 0.0f); // Normale per la faccia inferiore
         glVertex3f(-0.5f, -0.5f, -0.5f);
         glVertex3f(0.5f, -0.5f, -0.5f);
         glVertex3f(0.5f, -0.5f, 0.5f);
         glVertex3f(-0.5f, -0.5f, 0.5f);
     }
-
 
     glEnd();
     glPopMatrix();
@@ -428,54 +562,55 @@ bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect)
     return dotProduct < 0.0f; // Face is visible if the dot product is positive
 }
 
-void addChunk(Point2D pos)
-{
-    world.chunksMap[pos] = Chunk(pos);
-    std::cout << "chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
+void addChunk(Point2D pos) {
+    world.chunksMap[pos] = Chunk(pos, world.generationSeed);
+    //std::cout << "Chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
 }
 // Costruttore predefinito
 Chunk::Chunk() : pos(Point2D(0, 0)) {}
 
-// Costruttore con posizione
-// Costruttore con posizione
-Chunk::Chunk(Point2D position) : pos(Point2D(position.x * CHUNK_SIZE, position.z * CHUNK_SIZE))
-{
+// Costruttore del Chunk con generazione basata su Perlin Noise
+Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, position.z * CHUNK_SIZE)) {
+    PerlinNoise noise(seed); // Crea un'istanza di PerlinNoise con il seme specificato
+
     blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT)));
 
-    // Passo 1: Crea tutti i blocchi
-    for (int x = 0; x < CHUNK_SIZE; ++x)
-    {
-        for (int z = 0; z < CHUNK_SIZE; ++z)
-        {
-            for (int y = 0; y < CHUNK_HEIGHT; ++y)
-            {
+    for (int x = 0; x < CHUNK_SIZE; ++x) {
+        for (int z = 0; z < CHUNK_SIZE; ++z) {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
                 float posX = pos.x + x;
                 float posY = static_cast<float>(y);
                 float posZ = pos.z + z;
-                BlockType blockType = (posY > (CHUNK_HEIGHT / 2) + pos.x/CHUNK_SIZE + pos.z/CHUNK_SIZE) ? BlockType::AIR : BlockType::TEST;
+
+                // Calcola il valore del Perlin Noise
+                float noiseValue = noise.getNoise(posX * 0.1f, posY * 0.1f, posZ * 0.1f);
+
+                BlockType blockType;
+                if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f) {
+                    blockType = BlockType::AIR;
+                } else if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f - 4) {
+                    blockType = BlockType::DIRT;
+                } else {
+                    blockType = BlockType::STONE;
+                }
+
                 blocks[x][z][y] = Block(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), blockType);
             }
         }
     }
 
-    // Passo 2: Aggiorna la visibilità delle facce
-    for (int x = 0; x < CHUNK_SIZE; ++x)
-    {
-        for (int z = 0; z < CHUNK_SIZE; ++z)
-        {
-            for (int y = 0; y < CHUNK_HEIGHT; ++y)
-            {
+    // Aggiorna la visibilità delle facce
+    for (int x = 0; x < CHUNK_SIZE; ++x) {
+        for (int z = 0; z < CHUNK_SIZE; ++z) {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
                 Block& currentBlock = blocks[x][z][y];
-                if (currentBlock.type == BlockType::AIR || currentBlock.type == BlockType::_VOID)
-                {
-                    continue; // Ignora i blocchi vuoti
-                }
+                if (currentBlock.type == BlockType::AIR || currentBlock.type == BlockType::_VOID) continue;
 
-                currentBlock.setFaceVisibility(FaceType::FRONT,  !isBlock(Point3D(pos.x + x, y, pos.z + z + 1)));
-                currentBlock.setFaceVisibility(FaceType::BACK,   !isBlock(Point3D(pos.x + x, y, pos.z + z - 1)));
-                currentBlock.setFaceVisibility(FaceType::LEFT,   !isBlock(Point3D(pos.x + x - 1, y, pos.z + z)));
-                currentBlock.setFaceVisibility(FaceType::RIGHT,  !isBlock(Point3D(pos.x + x + 1, y, pos.z + z)));
-                currentBlock.setFaceVisibility(FaceType::TOP,    !isBlock(Point3D(pos.x + x, y + 1, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::FRONT, !isBlock(Point3D(pos.x + x, y, pos.z + z + 1)));
+                currentBlock.setFaceVisibility(FaceType::BACK, !isBlock(Point3D(pos.x + x, y, pos.z + z - 1)));
+                currentBlock.setFaceVisibility(FaceType::LEFT, !isBlock(Point3D(pos.x + x - 1, y, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::RIGHT, !isBlock(Point3D(pos.x + x + 1, y, pos.z + z)));
+                currentBlock.setFaceVisibility(FaceType::TOP, !isBlock(Point3D(pos.x + x, y + 1, pos.z + z)));
                 currentBlock.setFaceVisibility(FaceType::BOTTOM, !isBlock(Point3D(pos.x + x, y - 1, pos.z + z)));
 
                 updateAdjacentBlocks(Point3D(pos.x + x, y, pos.z + z));
@@ -673,12 +808,10 @@ void drawText(const std::string& text, Point2D pos, void* font)
 
 void display()
 {
-    // Calcola il tempo trascorso dall'ultimo frame
     auto currentFrameTime = std::chrono::steady_clock::now();
     float deltaTime = std::chrono::duration<float>(currentFrameTime - lastFrameTime).count();
     lastFrameTime = currentFrameTime;
 
-    // Calcola gli FPS
     if (deltaTime > 0.0f)
     {
         fps = 1.0f / deltaTime;
@@ -703,20 +836,21 @@ void display()
     float lookZ = camera.pos.z + cosPitch * sinYaw;
 
     gluLookAt(
-        camera.pos.x, camera.pos.y, camera.pos.z, // Posizione della camera
-        lookX, lookY, lookZ,                      // Punto di guardia
-        0.0f, 1.0f, 0.0f                          // Vettore "up"
+        camera.pos.x, camera.pos.y, camera.pos.z,
+        lookX, lookY, lookZ,
+        0.0f, 1.0f, 0.0f
     );
 
-    // Itera sui chunk nella mappa
+    // Disegna tutti i chunk
     for (const auto& [chunkPos, chunk] : world.chunksMap)
     {
         chunk.draw();
+
         if (showChunkBorder)
         {
-            // Disegna le linee verticali grigie che delimitano i chunk
             glColor3f(0.5f, 0.5f, 0.5f); // Grigio
-            glLineWidth(2.0f);          // Spessore delle linee
+            glLineWidth(2.0f);
+
             glBegin(GL_LINES);
             float lineHeight = 500.0f;
             float xMin = chunk.pos.x - 0.5f;
@@ -724,19 +858,16 @@ void display()
             float zMin = chunk.pos.z - 0.5f;
             float zMax = chunk.pos.z + CHUNK_SIZE - 0.5f;
 
-            // Linea verticale sinistra
+            // Linee verticali delimitanti il chunk
             glVertex3f(xMin, 0.0f, zMin);
             glVertex3f(xMin, lineHeight, zMin);
 
-            // Linea verticale destra
             glVertex3f(xMax, 0.0f, zMin);
             glVertex3f(xMax, lineHeight, zMin);
 
-            // Linea verticale anteriore
             glVertex3f(xMax, 0.0f, zMax);
             glVertex3f(xMax, lineHeight, zMax);
 
-            // Linea verticale posteriore
             glVertex3f(xMin, 0.0f, zMax);
             glVertex3f(xMin, lineHeight, zMax);
 
@@ -746,25 +877,26 @@ void display()
 
     if (showData)
     {
-        // Disegna il testo sullo schermo
         glMatrixMode(GL_PROJECTION);
-        glPushMatrix(); // Salva la matrice corrente
+        glPushMatrix();
         glLoadIdentity();
-        glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1); // Modalità ortografica
-        glMatrixMode(GL_MODELVIEW);
-        glPushMatrix(); // Salva la matrice corrente
-        glLoadIdentity();
-        glColor3f(1.0f, 1.0f, 1.0f); // Bianco
+        glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1);
 
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        glColor3f(1.0f, 1.0f, 1.0f); // Bianco
         drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
         drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, 15));
         drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, 30));
+
         Point2D chunkCoords = getChunkCoordinates(camera.pos);
         drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, 45));
 
-        glPopMatrix(); // Ripristina la matrice modelview
+        glPopMatrix();
         glMatrixMode(GL_PROJECTION);
-        glPopMatrix(); // Ripristina la matrice proiezione
+        glPopMatrix();
         glMatrixMode(GL_MODELVIEW);
     }
 
