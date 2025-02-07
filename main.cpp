@@ -19,7 +19,7 @@
 const float FIXED_ASPECT_RATIO = 16.0f / 9.0f;
 const int CHUNK_SIZE = 16;      // Dimensioni orizzontali di un chunk
 const int CHUNK_HEIGHT = 100;   // Altezza massima di un chunk
-const int RENDER_DISTANCE = 5;  // Distanza di rendering
+const int RENDER_DISTANCE = 10;  // Distanza di rendering
 
 // ================================
 // STRUTTURE E CLASSI
@@ -205,13 +205,16 @@ public:
 };
 
 // Classe Camera
-class Camera
-{
+class Camera {
 public:
     Point3D pos;
     Rotation rot;
-    Camera(Point3D initialPos = Point3D(0.0f, 0.0f, 0.0f), Rotation initialRot = Rotation(0.0f, 0.0f, 0.0f)) : pos(initialPos), rot(initialRot) {}
+
+    Camera(Point3D initialPos = Point3D(0.0f, 0.0f, 0.0f), Rotation initialRot = Rotation(0.0f, 0.0f, 0.0f))
+        : pos(initialPos), rot(initialRot) {}
+
     void reset();
+    bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect) const;
 };
 
 // Dichiarazione anticipata della classe Chunk
@@ -394,31 +397,39 @@ struct hash<Point2D>
 };
 }
 
-class World
-{
+class World {
 public:
     std::unordered_map<Point2D, Chunk> chunksMap;
     int generationSeed;
     Point3D spawnPoint;
+
+    void addChunk(Point2D pos);
+    Point2D getChunkCoordinates(const Point3D& pos) const;
+    void placeBlock(const Point3D& blockPos, BlockType type);
+    void updateVisibleChunks(const Camera& camera, int renderDistance);
+    Chunk* getChunk(Point2D pos);
+};
+
+class UIRenderer {
+public:
+    static void drawText(const std::string& text, Point2D pos, void* font = GLUT_BITMAP_HELVETICA_10);
 };
 
 // ================================
 // PROTOTIPI DELLE FUNZIONI
 // ================================
 void init();
-void addChunk(Point2D pos);
 float toRadians(float degrees);
 bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect);
+
 void display();
-void drawText(const std::string& text, Point2D pos, void* font = GLUT_BITMAP_HELVETICA_10);
-Point2D getChunkCoordinates(const Point3D pos);
-Chunk* getChunk(Point2D pos);
+
 void keyboard(unsigned char key, int x, int y);
 void processMouse(int button, int state, int x, int y);
 void motionMouse(int x, int y);
 void passiveMouse(int x, int y);
 void resetMousePosition();
-void placeBlock();
+
 void checkWorldIntegrity();
 
 // ================================
@@ -489,12 +500,12 @@ void init()
     camera.reset();
     world.generationSeed = 1234; // Seme per la generazione del mondo
 
-    int dim = 8;
+    int dim = RENDER_DISTANCE + 2;
     for (int i = -dim; i <= dim; i++)
     {
         for (int j = -dim; j <= dim; j++)
         {
-            addChunk(Point2D(i, j));
+            world.addChunk(Point2D(i, j));
         }
     }
 }
@@ -524,11 +535,17 @@ void checkWorldIntegrity()
     std::cout << "controllo validità del mondo effettuata" << std::endl;
 }
 
-void Camera::reset()
-{
+void Camera::reset() {
     pos = Point3D(-4 * CHUNK_SIZE, 10 * CHUNK_SIZE, -4 * CHUNK_SIZE);
     rot = Rotation(-30.0f, 45.0f, 0.0f);
     glutPostRedisplay();
+}
+
+bool Camera::isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect) const {
+    Point3D directionVect(blockPos.x - pos.x, blockPos.y - pos.y, blockPos.z - pos.z);
+    directionVect.normalize();
+    float dotProduct = directionVect.x * faceNormalVect.x + directionVect.y * faceNormalVect.y + directionVect.z * faceNormalVect.z;
+    return dotProduct < 0.0f;
 }
 
 void Block::draw(const Chunk& chunk) const
@@ -558,7 +575,7 @@ void Block::draw(const Chunk& chunk) const
     glBegin(GL_QUADS);
 
     // Fronte
-    if (faces[static_cast<int>(FaceType::FRONT)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, 1.0f)) || !enableFaceOptimization))
+    if (faces[static_cast<int>(FaceType::FRONT)].isVisible && (camera.isFaceVisible(pos, Point3D(0.0f, 0.0f, 1.0f)) || !enableFaceOptimization))
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::FRONT)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f }; // Usa il colore della faccia con un fattore di emissione ridotto
@@ -575,7 +592,7 @@ void Block::draw(const Chunk& chunk) const
     }
 
     // Dietro
-    if (faces[static_cast<int>(FaceType::BACK)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 0.0f, -1.0f)) || !enableFaceOptimization))
+    if (faces[static_cast<int>(FaceType::BACK)].isVisible && (camera.isFaceVisible(pos, Point3D(0.0f, 0.0f, -1.0f)) || !enableFaceOptimization))
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::BACK)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
@@ -592,7 +609,7 @@ void Block::draw(const Chunk& chunk) const
     }
 
     // Sinistra
-    if (faces[static_cast<int>(FaceType::LEFT)].isVisible && (isFaceVisible(pos, Point3D(-1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
+    if (faces[static_cast<int>(FaceType::LEFT)].isVisible && (camera.isFaceVisible(pos, Point3D(-1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::LEFT)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
@@ -609,7 +626,7 @@ void Block::draw(const Chunk& chunk) const
     }
 
     // Destra
-    if (faces[static_cast<int>(FaceType::RIGHT)].isVisible && (isFaceVisible(pos, Point3D(1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
+    if (faces[static_cast<int>(FaceType::RIGHT)].isVisible && (camera.isFaceVisible(pos, Point3D(1.0f, 0.0f, 0.0f)) || !enableFaceOptimization))
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::RIGHT)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
@@ -626,7 +643,7 @@ void Block::draw(const Chunk& chunk) const
     }
 
     // Sopra
-    if (faces[static_cast<int>(FaceType::TOP)].isVisible && (isFaceVisible(pos, Point3D(0.0f, 1.0f, 0.0f)) || !enableFaceOptimization) && showTopFace)
+    if (faces[static_cast<int>(FaceType::TOP)].isVisible && (camera.isFaceVisible(pos, Point3D(0.0f, 1.0f, 0.0f)) || !enableFaceOptimization) && showTopFace)
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::TOP)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
@@ -643,7 +660,7 @@ void Block::draw(const Chunk& chunk) const
     }
 
     // Sotto
-    if (faces[static_cast<int>(FaceType::BOTTOM)].isVisible && (isFaceVisible(pos, Point3D(0.0f, -1.0f, 0.0f)) || !enableFaceOptimization))
+    if (faces[static_cast<int>(FaceType::BOTTOM)].isVisible && (camera.isFaceVisible(pos, Point3D(0.0f, -1.0f, 0.0f)) || !enableFaceOptimization))
     {
         const Color& faceColor = faces[static_cast<int>(FaceType::BOTTOM)].color;
         float emission[] = { faceColor.r * 0.8f, faceColor.g * 0.8f, faceColor.b * 0.8f, 1.0f };
@@ -668,18 +685,10 @@ void Block::setFaceVisibility(FaceType face, bool isVisible)
     faces[static_cast<int>(face)].isVisible = isVisible;
 }
 
-bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect)
-{
-    Point3D directionVect(blockPos.x - camera.pos.x, blockPos.y - camera.pos.y, blockPos.z - camera.pos.z);
-    directionVect.normalize(); // Normalize the direction vector
-    float dotProduct = directionVect.x * faceNormalVect.x + directionVect.y * faceNormalVect.y + directionVect.z * faceNormalVect.z;
-    return dotProduct < 0.0f; // Face is visible if the dot product is positive
-}
-
-void addChunk(Point2D pos)
+void World::addChunk(Point2D pos)
 {
     world.chunksMap[pos] = Chunk(pos, world.generationSeed);
-    std::cout << "Chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
+    //std::cout << "Chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
 }
 // Costruttore predefinito
 Chunk::Chunk() : pos(Point2D(0, 0)) {}
@@ -690,7 +699,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
     PerlinNoise noise(seed); // Crea un'istanza di PerlinNoise con il seme specificato
     blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT)));
 
-    float globalWaterLevel = CHUNK_HEIGHT / 2 +1; // Livello globale dell'acqua ("livello del mare")
+    float globalWaterLevel = CHUNK_HEIGHT / 3 +1; // Livello globale dell'acqua ("livello del mare")
 
     for (int x = 0; x < CHUNK_SIZE; ++x)
     {
@@ -708,7 +717,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
 
                 BlockType blockType;
 
-                if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f + 2)
+                if (posY > CHUNK_HEIGHT / 3 + noiseValue * 10.0f + 2)
                 {
                     blockType = BlockType::AIR; // Aria sopra il terreno
                 }
@@ -716,7 +725,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
                 {
                     blockType = BlockType::BEDROCK; // Bedrock sotto il terreno
                 }
-                else if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f - 6) // spessore del terreno in superficie
+                else if (posY > CHUNK_HEIGHT / 3 + noiseValue * 10.0f - 6) // spessore del terreno in superficie
                 {
                     blockType = BlockType::DIRT; // Terra in superficie
                 }
@@ -827,22 +836,6 @@ void Chunk::draw() const
             }
         }
     }
-
-    // Poi disegna i blocchi trasparenti
-    for (int x = 0; x < CHUNK_SIZE; ++x)
-    {
-        for (int z = 0; z < CHUNK_SIZE; ++z)
-        {
-            for (int y = 0; y < CHUNK_HEIGHT; ++y)
-            {
-                const Block& block = blocks[x][z][y];
-                if (block.isTransparent && hasVisibleFace(block))
-                {
-                    block.draw(*this);
-                }
-            }
-        }
-    }
 }
 
 bool Chunk::hasVisibleFace(const Block& block) const
@@ -921,10 +914,10 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
     for (size_t i = 0; i < directions.size(); ++i)
     {
         Point3D adjacentPos = blockPos + directions[i];
-        Point2D adjacentChunkCoords = getChunkCoordinates(adjacentPos);
+        Point2D adjacentChunkCoords = world.getChunkCoordinates(adjacentPos);
 
         // Recupera il chunk adiacente dalla mappa
-        Chunk* adjacentChunk = getChunk(adjacentChunkCoords);
+        Chunk* adjacentChunk = world.getChunk(adjacentChunkCoords);
         if (!adjacentChunk)
         {
             continue; // Il chunk adiacente non esiste
@@ -957,14 +950,46 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
     }
 }
 
-// Funzione per ottenere un chunk specifico
-Chunk* getChunk(Point2D pos)
-{
-    if (world.chunksMap.find(pos) != world.chunksMap.end())
-    {
-        return &world.chunksMap[pos];
+
+Point2D World::getChunkCoordinates(const Point3D& pos) const {
+    int chunkX = static_cast<int>(std::floor(pos.x / CHUNK_SIZE));
+    int chunkZ = static_cast<int>(std::floor(pos.z / CHUNK_SIZE));
+    return Point2D(chunkX, chunkZ);
+}
+
+Chunk* World::getChunk(Point2D pos) {
+    auto it = chunksMap.find(pos);
+    return (it != chunksMap.end()) ? &it->second : nullptr;
+}
+
+void World::placeBlock(const Point3D& blockPos, BlockType type) {
+    Point2D chunkCoords = getChunkCoordinates(blockPos);
+    Chunk* targetChunk = getChunk(chunkCoords);
+
+    if (!targetChunk) {
+        addChunk(chunkCoords);
+        targetChunk = getChunk(chunkCoords);
     }
-    return nullptr; // Chunk non trovato
+
+    if (targetChunk) {
+        targetChunk->addBlock(blockPos, type);
+        std::cout << "Blocco piazzato in (" << blockPos.x << ", " << blockPos.y << ", " << blockPos.z << ")" << std::endl;
+    } else {
+        std::cerr << "Impossibile creare il chunk per piazzare il blocco." << std::endl;
+    }
+}
+
+void World::updateVisibleChunks(const Camera& camera, int renderDistance) {
+    Point2D currentChunkCoords = getChunkCoordinates(camera.pos);
+
+    for (int i = -renderDistance; i <= renderDistance; ++i) {
+        for (int j = -renderDistance; j <= renderDistance; ++j) {
+            Point2D chunkPos(currentChunkCoords.x + i, currentChunkCoords.z + j);
+            if (chunksMap.find(chunkPos) == chunksMap.end()) {
+                addChunk(chunkPos);
+            }
+        }
+    }
 }
 
 bool Chunk::isBlock(Point3D blockPos) const
@@ -983,8 +1008,8 @@ bool Chunk::isBlock(Point3D blockPos) const
     }
 
     // Se il blocco non è nel chunk corrente, calcola le coordinate del chunk adiacente
-    Point2D adjacentChunkCoords = getChunkCoordinates(blockPos);
-    Chunk* targetChunk = getChunk(adjacentChunkCoords);
+    Point2D adjacentChunkCoords = world.getChunkCoordinates(blockPos);
+    Chunk* targetChunk = world.getChunk(adjacentChunkCoords);
 
     // Se il chunk adiacente non esiste, considera il blocco come non presente
     if (!targetChunk)
@@ -1009,29 +1034,22 @@ bool Chunk::isBlock(Point3D blockPos) const
     return false;
 }
 
-Point2D getChunkCoordinates(const Point3D pos)
-{
-    int chunkX = static_cast<int>(std::floor(pos.x / CHUNK_SIZE));
-    int chunkZ = static_cast<int>(std::floor(pos.z / CHUNK_SIZE));
-    return Point2D(chunkX, chunkZ);
-}
-
 // Funzione per convertire gradi in radianti
 float toRadians(float degrees)
 {
     return degrees * M_PI / 180.0f;
 }
 
-void drawText(const std::string& text, Point2D pos, void* font)
-{
-    glDisable(GL_LIGHTING); // Disabilita la luce
-    glColor3f(1.0f, 1.0f, 1.0f); // Imposta il colore del testo a bianco
+void UIRenderer::drawText(const std::string& text, Point2D pos, void* font) {
+    glDisable(GL_LIGHTING);
+    glColor3f(1.0f, 1.0f, 1.0f);
     glRasterPos2f(pos.x, pos.z);
-    for (char c : text)
-    {
+
+    for (char c : text) {
         glutBitmapCharacter(font, c);
     }
-    glEnable(GL_LIGHTING); // Riattiva la luce
+
+    glEnable(GL_LIGHTING);
 }
 
 void display()
@@ -1069,35 +1087,49 @@ void display()
         0.0f, 1.0f, 0.0f
     );
 
-    // Disegna tutti i chunk
-    for (const auto& [chunkPos, chunk] : world.chunksMap)
+    // Calcola i chunk visibili entro la render_distance
+    Point2D currentChunkCoords = world.getChunkCoordinates(camera.pos);
+
+    for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
     {
-        chunk.draw();
-
-        if (showChunkBorder)
+        for (int j = -RENDER_DISTANCE; j <= RENDER_DISTANCE; j++)
         {
-            glDisable(GL_LIGHTING); // Disabilita la luce
-            glColor3f(0,0,0); // Imposta il colore delle linee a grigio
-            glLineWidth(2.0f);
-            glBegin(GL_LINES);
-            float lineHeight = 500.0f;
-            float xMin = chunk.pos.x - 0.5f;
-            float xMax = chunk.pos.x + CHUNK_SIZE - 0.5f;
-            float zMin = chunk.pos.z - 0.5f;
-            float zMax = chunk.pos.z + CHUNK_SIZE - 0.5f;
+            Point2D chunkPos(currentChunkCoords.x + i, currentChunkCoords.z + j);
 
-            // Linee verticali delimitanti il chunk
-            glVertex3f(xMin, 0.0f, zMin);
-            glVertex3f(xMin, lineHeight, zMin);
-            glVertex3f(xMax, 0.0f, zMin);
-            glVertex3f(xMax, lineHeight, zMin);
-            glVertex3f(xMax, 0.0f, zMax);
-            glVertex3f(xMax, lineHeight, zMax);
-            glVertex3f(xMin, 0.0f, zMax);
-            glVertex3f(xMin, lineHeight, zMax);
+            // Cerca il chunk nella mappa
+            auto it = world.chunksMap.find(chunkPos);
+            if (it != world.chunksMap.end())
+            {
+                const Chunk& chunk = it->second;
 
-            glEnd();
-            glEnable(GL_LIGHTING); // Riattiva la luce
+                // Disegna il chunk
+                chunk.draw();
+
+                if (showChunkBorder)
+                {
+                    glDisable(GL_LIGHTING); // Disabilita la luce
+                    glColor3f(0, 0, 0); // Imposta il colore delle linee a grigio
+                    glLineWidth(2.0f);
+                    glBegin(GL_LINES);
+                    float lineHeight = 500.0f;
+                    float xMin = chunk.pos.x - 0.5f;
+                    float xMax = chunk.pos.x + CHUNK_SIZE - 0.5f;
+                    float zMin = chunk.pos.z - 0.5f;
+                    float zMax = chunk.pos.z + CHUNK_SIZE - 0.5f;
+
+                    // Linee verticali delimitanti il chunk
+                    glVertex3f(xMin, 0.0f, zMin);
+                    glVertex3f(xMin, lineHeight, zMin);
+                    glVertex3f(xMax, 0.0f, zMin);
+                    glVertex3f(xMax, lineHeight, zMin);
+                    glVertex3f(xMax, 0.0f, zMax);
+                    glVertex3f(xMax, lineHeight, zMax);
+                    glVertex3f(xMin, 0.0f, zMax);
+                    glVertex3f(xMin, lineHeight, zMax);
+                    glEnd();
+                    glEnable(GL_LIGHTING); // Riattiva la luce
+                }
+            }
         }
     }
 
@@ -1140,11 +1172,11 @@ void display()
         glColor3f(1.0f, 1.0f, 1.0f);
 
         // Disegna i testi sopra il rettangolo
-        drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
-        drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30));
-        drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45));
-        Point2D chunkCoords = getChunkCoordinates(camera.pos);
-        drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
+        UIRenderer::drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
+        UIRenderer::drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30));
+        UIRenderer::drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45));
+        Point2D chunkCoords = world.getChunkCoordinates(camera.pos);
+        UIRenderer::drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
 
         // Ripristina le impostazioni OpenGL
         glPopMatrix();
@@ -1156,84 +1188,45 @@ void display()
     glutSwapBuffers();
 }
 
-void placeBlock()
-{
-    // Calcola la direzione del raggio partendo dalla telecamera
-    float cosPitch = cos(toRadians(camera.rot.xRot));
-    float sinPitch = sin(toRadians(camera.rot.xRot));
-    float cosYaw = cos(toRadians(camera.rot.yRot));
-    float sinYaw = sin(toRadians(camera.rot.yRot));
-
-    Point3D rayDirection(cosPitch * cosYaw, sinPitch, cosPitch * sinYaw);
-
-    // Normalizza il vettore direzione
-    rayDirection.normalize();
-
-    // Definisci una posizione di test lungo il raggio
-    Point3D blockPosition = camera.pos + (rayDirection * 5.0f); // Esempio: 5 unità davanti alla telecamera
-
-    // Arrotonda le coordinate del blocco alle posizioni intere
-    blockPosition.x = std::round(blockPosition.x);
-    blockPosition.y = std::round(blockPosition.y);
-    blockPosition.z = std::round(blockPosition.z);
-
-    // Trova il chunk corrispondente
-    Point2D chunkCoordinates = getChunkCoordinates(blockPosition);
-    Chunk* targetChunk = getChunk(chunkCoordinates);
-
-    if (!targetChunk)
-    {
-        // Se il chunk non esiste, crealo prima di aggiungere il blocco
-        //addChunk(chunkCoordinates);
-        //targetChunk = getChunk(chunkCoordinates);
-
-        if (!targetChunk)
-        {
-            std::cerr << "Impossibile creare il chunk per piazzare il blocco." << std::endl;
-            return;
-        }
-    }
-
-    // Aggiungi il blocco al chunk
-    targetChunk->addBlock(blockPosition, BlockType::TEST);
-
-    std::cout << "Blocco piazzato in (" << blockPosition.x << ", " << blockPosition.y << ", " << blockPosition.z << ")" << std::endl;
-
-    // Richiedi il ridisegno della scena
-    glutPostRedisplay();
-}
-
 void keyboard(unsigned char key, int, int)
 {
     float horizontalStep = 10.0f;
     float verticalStep = 5.0f;
+    bool moved = false;
 
     switch (key)
     {
     case 'w':
         camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
         camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
+        moved = true;
         break;
     case 's':
         camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
         camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
+        moved = true;
         break;
     case 'd':
         camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
         camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
+        moved = true;
         break;
     case 'a':
         camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
         camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
+        moved = true;
         break;
     case ' ':
         camera.pos.y += verticalStep;
+        moved = true;
         break;
     case 'S':
         camera.pos.y -= verticalStep;
+        moved = true;
         break;
     case 'r':
         camera.reset();
+        moved = true;
         break;
     case 'b':
         showChunkBorder = !showChunkBorder;
@@ -1247,10 +1240,14 @@ void keyboard(unsigned char key, int, int)
     case 'm':
         enableFaceOptimization = !enableFaceOptimization;
         break;
-
     case 'p':
-        placeBlock();
+        //world.placeBlock();
         break;
+    }
+
+    if (moved)
+    {
+        world.updateVisibleChunks(camera, RENDER_DISTANCE); // Aggiorna i chunk visibili
     }
 
     glutPostRedisplay();
