@@ -339,8 +339,8 @@ public:
             faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
             faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
             faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
-            faces[static_cast<int>(FaceType::BOTTOM)] = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            isTransparent = true; // L'acqua è trasparente
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
+            isTransparent = false; // L'acqua è trasparente
             break;
         }
         default:
@@ -542,7 +542,7 @@ void Block::draw(const Chunk& chunk) const
 
     if (isTransparent && type == BlockType::WATER)
     {
-        glScalef(1.0f, 0.8f, 1.0f); // Riduci solo l'altezza (asse Y)
+        glScalef(1.0f, 1.0f, 1.0f); // Acqua sottostante: cubo completo
     }
     else
     {
@@ -741,7 +741,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
                 float posY = static_cast<float>(y);
                 float posZ = pos.z + z;
 
-                if(posY < globalWaterLevel && blocks[x][z][y].type == BlockType::AIR)
+                if (posY < globalWaterLevel && blocks[x][z][y].type == BlockType::AIR)
                 {
                     blocks[x][z][y] = Block(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::WATER);
                 }
