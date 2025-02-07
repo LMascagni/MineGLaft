@@ -34,12 +34,17 @@ private:
     void generatePermutation()
     {
         std::mt19937 generator(seed);
-        permutation.resize(256);
+        permutation.resize(512);
         for (int i = 0; i < 256; ++i)
         {
             permutation[i] = i;
         }
-        std::shuffle(permutation.begin(), permutation.end(), generator);
+        std::shuffle(permutation.begin(), permutation.begin()+256, generator);
+        // Duplica la tabella per evitare controlli di wrapping
+        for(int i=0; i<256; i++)
+        {
+            permutation[256+i] = permutation[i];
+        }
     }
 
     // Funzione per interpolare con un polinomio smoothstep
@@ -73,9 +78,14 @@ public:
     float getNoise(float x, float y, float z) const
     {
         // Trova la cella della griglia contenente il punto (x, y, z)
-        int X = static_cast<int>(std::floor(x)) & 255;
-        int Y = static_cast<int>(std::floor(y)) & 255;
-        int Z = static_cast<int>(std::floor(z)) & 255;
+        int X = static_cast<int>(std::floor(x));
+        int Y = static_cast<int>(std::floor(y));
+        int Z = static_cast<int>(std::floor(z));
+
+        // Usa un sistema di coordinate che gestisce correttamente i negativi
+        int XX = X & 255;
+        int YY = Y & 255;
+        int ZZ = Z & 255;
 
         x -= std::floor(x);
         y -= std::floor(y);
@@ -87,12 +97,12 @@ public:
         float w = smoothstep(z);
 
         // Hash delle coordinate della griglia
-        int A = permutation[X] + Y;
-        int AA = permutation[A] + Z;
-        int AB = permutation[A + 1] + Z;
-        int B = permutation[X + 1] + Y;
-        int BA = permutation[B] + Z;
-        int BB = permutation[B + 1] + Z;
+        int A = permutation[XX] + YY;
+        int AA = permutation[A & 255] + ZZ;
+        int AB = permutation[(A + 1) & 255] + ZZ;
+        int B = permutation[(XX + 1) & 255] + YY;
+        int BA = permutation[B & 255] + ZZ;
+        int BB = permutation[(B + 1) & 255] + ZZ;
 
         // Combina i risultati dei gradienti
         float res = lerp(
@@ -409,13 +419,14 @@ void motionMouse(int x, int y);
 void passiveMouse(int x, int y);
 void resetMousePosition();
 void placeBlock();
+void checkWorldIntegrity();
 
 // ================================
 // VARIABILI GLOBALI
 // ================================
 Camera camera;
 World world; // Dichiarazione della variabile globale
-bool showChunkBorder = true;
+bool showChunkBorder = false;
 bool showData = true;
 bool showTopFace = true;
 bool enableFaceOptimization = true;
@@ -436,6 +447,8 @@ int main(int argc, char** argv)
 
     // Inizializza il programma
     init();
+
+    checkWorldIntegrity();
 
     // Registra le funzioni di callback
     glutDisplayFunc(display);
@@ -474,16 +487,41 @@ void init()
     glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight);
 
     camera.reset();
-    world.generationSeed = 12345; // Seme per la generazione del mondo
+    world.generationSeed = 1234; // Seme per la generazione del mondo
 
-    int dim = 6;
-    for (int i = 0; i <= dim * 2; i++)
+    int dim = 8;
+    for (int i = -dim; i <= dim; i++)
     {
-        for (int j = 0; j <= dim * 2; j++)
+        for (int j = -dim; j <= dim; j++)
         {
             addChunk(Point2D(i, j));
         }
     }
+}
+
+void checkWorldIntegrity()
+{
+    std::cout << "controllo validità del mondo..." << std::endl;
+
+    for (const auto& [chunkPos, chunk] : world.chunksMap)
+    {
+        for (int x = 0; x < CHUNK_SIZE; ++x)
+        {
+            for (int z = 0; z < CHUNK_SIZE; ++z)
+            {
+                for (int y = 0; y < CHUNK_HEIGHT; ++y)
+                {
+                    const Block& block = chunk.blocks[x][z][y];
+                    if (block.type == BlockType::_VOID)
+                    {
+                        std::cerr << "Blocco vuoto trovato in: " << chunk.pos.x + x << ", " << y << ", " << chunk.pos.z + z << std::endl;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "controllo validità del mondo effettuata" << std::endl;
 }
 
 void Camera::reset()
@@ -652,7 +690,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
     PerlinNoise noise(seed); // Crea un'istanza di PerlinNoise con il seme specificato
     blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT)));
 
-    float globalWaterLevel = CHUNK_HEIGHT / 2; // Livello globale dell'acqua ("livello del mare")
+    float globalWaterLevel = CHUNK_HEIGHT / 2 +1; // Livello globale dell'acqua ("livello del mare")
 
     for (int x = 0; x < CHUNK_SIZE; ++x)
     {
@@ -666,7 +704,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
 
                 float scaleNoiseFactor = 0.01f;
                 // Calcola il valore del Perlin Noise
-                float noiseValue = noise.getNoise(posX * scaleNoiseFactor, posY * scaleNoiseFactor * 5, posZ * scaleNoiseFactor);
+                float noiseValue = noise.getNoise((posX) * scaleNoiseFactor, posY * scaleNoiseFactor * 5, (posZ) * scaleNoiseFactor);
 
                 BlockType blockType;
 
@@ -712,41 +750,41 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
     }
 
     // Aggiungi sabbia intorno e sotto i blocchi d'acqua
-for (int x = 0; x < CHUNK_SIZE; ++x)
-{
-    for (int z = 0; z < CHUNK_SIZE; ++z)
+    for (int x = 0; x < CHUNK_SIZE; ++x)
     {
-        for (int y = 0; y < CHUNK_HEIGHT; ++y)
+        for (int z = 0; z < CHUNK_SIZE; ++z)
         {
-            if (blocks[x][z][y].type == BlockType::WATER)
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
             {
-                // Controlla i blocchi sotto l'acqua
-                if (y > 0 && blocks[x][z][y - 1].type != BlockType::WATER)
+                if (blocks[x][z][y].type == BlockType::WATER)
                 {
-                    blocks[x][z][y - 1] = Block(Point3D(pos.x + x, y - 1, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
-                }
+                    // Controlla i blocchi sotto l'acqua
+                    if (y > 0 && blocks[x][z][y - 1].type != BlockType::WATER)
+                    {
+                        blocks[x][z][y - 1] = Block(Point3D(pos.x + x, y - 1, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    }
 
-                // Controlla i blocchi attorno all'acqua (sinistra, destra, davanti, dietro)
-                if (x > 0 && blocks[x - 1][z][y].type != BlockType::WATER)
-                {
-                    blocks[x - 1][z][y] = Block(Point3D(pos.x + x - 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
-                }
-                if (x < CHUNK_SIZE - 1 && blocks[x + 1][z][y].type != BlockType::WATER)
-                {
-                    blocks[x + 1][z][y] = Block(Point3D(pos.x + x + 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
-                }
-                if (z > 0 && blocks[x][z - 1][y].type != BlockType::WATER)
-                {
-                    blocks[x][z - 1][y] = Block(Point3D(pos.x + x, y, pos.z + z - 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
-                }
-                if (z < CHUNK_SIZE - 1 && blocks[x][z + 1][y].type != BlockType::WATER)
-                {
-                    blocks[x][z + 1][y] = Block(Point3D(pos.x + x, y, pos.z + z + 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    // Controlla i blocchi attorno all'acqua (sinistra, destra, davanti, dietro)
+                    if (x > 0 && blocks[x - 1][z][y].type != BlockType::WATER)
+                    {
+                        blocks[x - 1][z][y] = Block(Point3D(pos.x + x - 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    }
+                    if (x < CHUNK_SIZE - 1 && blocks[x + 1][z][y].type != BlockType::WATER)
+                    {
+                        blocks[x + 1][z][y] = Block(Point3D(pos.x + x + 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    }
+                    if (z > 0 && blocks[x][z - 1][y].type != BlockType::WATER)
+                    {
+                        blocks[x][z - 1][y] = Block(Point3D(pos.x + x, y, pos.z + z - 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    }
+                    if (z < CHUNK_SIZE - 1 && blocks[x][z + 1][y].type != BlockType::WATER)
+                    {
+                        blocks[x][z + 1][y] = Block(Point3D(pos.x + x, y, pos.z + z + 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                    }
                 }
             }
         }
     }
-}
 
     // Aggiorna la visibilità delle facce
     for (int x = 0; x < CHUNK_SIZE; ++x)
@@ -1039,7 +1077,7 @@ void display()
         if (showChunkBorder)
         {
             glDisable(GL_LIGHTING); // Disabilita la luce
-            glColor3f(0.5f, 0.5f, 0.5f); // Imposta il colore delle linee a grigio
+            glColor3f(0,0,0); // Imposta il colore delle linee a grigio
             glLineWidth(2.0f);
             glBegin(GL_LINES);
             float lineHeight = 500.0f;
@@ -1069,19 +1107,46 @@ void display()
         glPushMatrix();
         glLoadIdentity();
         glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1);
-
         glMatrixMode(GL_MODELVIEW);
         glPushMatrix();
         glLoadIdentity();
 
-        glColor3f(1.0f, 1.0f, 1.0f); // Bianco
+        // Disabilita la luce e abilita il blending per il rettangolo semitrasparente
+        glDisable(GL_LIGHTING);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Disabilita lo Z-buffer per evitare conflitti
+        glDisable(GL_DEPTH_TEST);
+
+        // Imposta il colore del rettangolo (grigio semitrasparente)
+        glColor4f(0.2f, 0.2f, 0.2f, 0.7f); // RGBA: Grigio con alpha 0.7
+
+        // Disegna il rettangolo
+        glBegin(GL_QUADS);
+        glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT) - 80); // Alto sinistro
+        glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT));      // Basso sinistro
+        glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT));    // Basso destro
+        glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT) - 80); // Alto destro
+        glEnd();
+
+        // Riabilita lo Z-buffer dopo aver disegnato il rettangolo
+        glEnable(GL_DEPTH_TEST);
+
+        // Disabilita il blending dopo aver disegnato il rettangolo
+        glDisable(GL_BLEND);
+
+        // Imposta il colore del testo a bianco
+        glColor3f(1.0f, 1.0f, 1.0f);
+
+        // Disegna i testi sopra il rettangolo
         drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
-        drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, 15));
-        drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, 30));
-
+        drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30));
+        drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45));
         Point2D chunkCoords = getChunkCoordinates(camera.pos);
-        drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, 45));
+        drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + ", " + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
 
+        // Ripristina le impostazioni OpenGL
         glPopMatrix();
         glMatrixMode(GL_PROJECTION);
         glPopMatrix();

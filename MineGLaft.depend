@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1738886364 source:c:\users\loren\documents\00-privata\repo\mineglaft\main.cpp
+1738889685 source:c:\users\loren\documents\00-privata\repo\mineglaft\main.cpp
 	<GL/glut.h>
 	<cmath>
 	<vector>
