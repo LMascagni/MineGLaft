@@ -711,7 +711,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
                 float posY = static_cast<float>(y);
                 float posZ = pos.z + z;
 
-                float scaleNoiseFactor = 0.01f;
+                float scaleNoiseFactor = 0.02f;
                 // Calcola il valore del Perlin Noise
                 float noiseValue = noise.getNoise((posX) * scaleNoiseFactor, posY * scaleNoiseFactor * 5, (posZ) * scaleNoiseFactor);
 
