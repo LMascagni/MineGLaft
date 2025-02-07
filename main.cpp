@@ -24,39 +24,39 @@ const int RENDER_DISTANCE = 5;  // Distanza di rendering
 // ================================
 // STRUTTURE E CLASSI
 // ================================
-
-//classe per generare il rumore
-#include <vector>
-#include <cmath>
-#include <random>
-
-class PerlinNoise {
+class PerlinNoise
+{
 private:
     int seed;
     std::vector<int> permutation;
 
     // Funzione per generare una tabella di permutazione pseudocasuale
-    void generatePermutation() {
+    void generatePermutation()
+    {
         std::mt19937 generator(seed);
         permutation.resize(256);
-        for (int i = 0; i < 256; ++i) {
+        for (int i = 0; i < 256; ++i)
+        {
             permutation[i] = i;
         }
         std::shuffle(permutation.begin(), permutation.end(), generator);
     }
 
     // Funzione per interpolare con un polinomio smoothstep
-    float smoothstep(float t) const {
+    float smoothstep(float t) const
+    {
         return t * t * (3.0f - 2.0f * t);
     }
 
     // Funzione per interpolare linearmente tra due valori
-    float lerp(float a, float b, float t) const {
+    float lerp(float a, float b, float t) const
+    {
         return a + t * (b - a);
     }
 
     // Funzione per ottenere il gradiente in un punto della griglia
-    float gradient(int hash, float x, float y, float z) const {
+    float gradient(int hash, float x, float y, float z) const
+    {
         hash = hash & 15; // Limita hash a 0-15
         float u = (hash < 8) ? x : y;
         float v = (hash < 4) ? y : ((hash == 12 || hash == 14) ? x : z);
@@ -64,12 +64,14 @@ private:
     }
 
 public:
-    PerlinNoise(int seedValue) : seed(seedValue) {
+    PerlinNoise(int seedValue) : seed(seedValue)
+    {
         generatePermutation();
     }
 
     // Funzione principale per calcolare il Perlin Noise
-    float getNoise(float x, float y, float z) const {
+    float getNoise(float x, float y, float z) const
+    {
         // Trova la cella della griglia contenente il punto (x, y, z)
         int X = static_cast<int>(std::floor(x)) & 255;
         int Y = static_cast<int>(std::floor(y)) & 255;
@@ -94,13 +96,13 @@ public:
 
         // Combina i risultati dei gradienti
         float res = lerp(
-            lerp(
-                lerp(gradient(permutation[AA], x, y, z), gradient(permutation[BA], x - 1, y, z), u),
-                lerp(gradient(permutation[AB], x, y - 1, z), gradient(permutation[BB], x - 1, y - 1, z), u), v),
-            lerp(
-                lerp(gradient(permutation[AA + 1], x, y, z - 1), gradient(permutation[BA + 1], x - 1, y, z - 1), u),
-                lerp(gradient(permutation[AB + 1], x, y - 1, z - 1), gradient(permutation[BB + 1], x - 1, y - 1, z - 1), u), v),
-            w);
+                        lerp(
+                            lerp(gradient(permutation[AA], x, y, z), gradient(permutation[BA], x - 1, y, z), u),
+                            lerp(gradient(permutation[AB], x, y - 1, z), gradient(permutation[BB], x - 1, y - 1, z), u), v),
+                        lerp(
+                            lerp(gradient(permutation[AA + 1], x, y, z - 1), gradient(permutation[BA + 1], x - 1, y, z - 1), u),
+                            lerp(gradient(permutation[AB + 1], x, y - 1, z - 1), gradient(permutation[BB + 1], x - 1, y - 1, z - 1), u), v),
+                        w);
 
         return res;
     }
@@ -180,11 +182,15 @@ public:
 class Color
 {
 public:
-    float r, g, b;
-    Color(float red = 1.0f, float green = 1.0f, float blue = 1.0f) : r(red), g(green), b(blue) {}
+    float r, g, b, a; // Add alpha component
+
+    // Constructor with default alpha value of 1.0f (fully opaque)
+    Color(float red = 1.0f, float green = 1.0f, float blue = 1.0f, float alpha = 1.0f) :
+        r(red), g(green), b(blue), a(alpha) {}
+
     void apply() const
     {
-        glColor3f(r, g, b);
+        glColor4f(r, g, b, a); // Use glColor4f instead of glColor3f to include alpha
     }
 };
 
@@ -208,7 +214,10 @@ enum class BlockType
     TEST,
     AIR,
     DIRT,
-    STONE
+    STONE,
+    SAND,
+    WATER,
+    BEDROCK
 };
 
 // Enum per identificare le facce del cubo
@@ -231,6 +240,7 @@ struct Face
 };
 
 // Classe Blocco
+// Classe Blocco
 class Block
 {
 public:
@@ -239,8 +249,10 @@ public:
     Rotation rot;
     BlockType type;
     Face faces[6];
+    bool isTransparent; // Nuovo campo per indicare se il blocco è trasparente
 
-    Block(Point3D position = Point3D(0.0f, 0.0f, 0.0f), float scaleFactor = 0.0f, Rotation rotation = Rotation(0.0f, 0.0f, 0.0f), BlockType blockType = BlockType::_VOID) : pos(position), scale(scaleFactor), rot(rotation), type(blockType)
+    Block(Point3D position = Point3D(0.0f, 0.0f, 0.0f), float scaleFactor = 0.0f, Rotation rotation = Rotation(0.0f, 0.0f, 0.0f), BlockType blockType = BlockType::_VOID)
+        : pos(position), scale(scaleFactor), rot(rotation), type(blockType), isTransparent(false) // Inizializza isTransparent a false di default
     {
         switch (type)
         {
@@ -252,6 +264,7 @@ public:
             faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
             faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
             faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.5f, 0.5f, 0.5f)); // Grigio
+            isTransparent = false; // Pietra non è trasparente
             break;
         }
         case BlockType::DIRT:
@@ -262,6 +275,7 @@ public:
             faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
             faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.50f, 0.0f)); // Verde
             faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.5f, 0.25f, 0.0f)); // Marrone
+            isTransparent = false; // Terra non è trasparente
             break;
         }
         case BlockType::TEST:
@@ -272,22 +286,68 @@ public:
             faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.0f, 1.0f, 1.0f)); // Ciano
             faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.0f, 1.0f)); // Blu
             faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(1.0f, 1.0f, 0.0f)); // Giallo
+            isTransparent = false; // Blocco di test non è trasparente
+            break;
+        }
+        case BlockType::BEDROCK:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.2f, 0.2f, 0.2f)); // Grigio scuro
+            isTransparent = false; // Bedrock non è trasparente
+            break;
+        }
+        case BlockType::AIR:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BACK)]   = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::TOP)]    = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            isTransparent = true; // L'aria è trasparente
+            break;
+        }
+        case BlockType::SAND:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(0.9f, 0.8f, 0.5f)); // Giallo chiaro
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.9f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.9f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.9f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(1.0f, 0.9f, 0.6f)); // Sopra più chiaro
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(0.9f, 0.8f, 0.5f));
+            isTransparent = false; // La sabbia non è trasparente
+            break;
+        }
+        case BlockType::WATER:
+        {
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f)); // Blu semitrasparente
+            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(0.0f, 0.3f, 0.8f, 0.5f));
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            isTransparent = true; // L'acqua è trasparente
             break;
         }
         default:
         {
-            faces[static_cast<int>(FaceType::FRONT)]  = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            faces[static_cast<int>(FaceType::BACK)]   = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            faces[static_cast<int>(FaceType::LEFT)]   = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            faces[static_cast<int>(FaceType::RIGHT)]  = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            faces[static_cast<int>(FaceType::TOP)]    = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
-            faces[static_cast<int>(FaceType::BOTTOM)] = Face(true, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::FRONT)]  = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BACK)]   = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::LEFT)]   = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::RIGHT)]  = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::TOP)]    = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            faces[static_cast<int>(FaceType::BOTTOM)] = Face(false, Color(1.0f, 1.0f, 1.0f)); // Non visibile
+            isTransparent = true; // Tipo di blocco sconosciuto considerato trasparente
             break;
         }
         }
     }
-    void draw(const Chunk& chunk) const;
 
+    void draw(const Chunk& chunk) const;
     void setFaceVisibility(FaceType face, bool isVisible);
 };
 
@@ -308,6 +368,7 @@ public:
     bool isBlock(Point3D pos) const;
     void addBlock(const Point3D& blockPos, BlockType type);
     void updateAdjacentBlocks(const Point3D& blockPos);
+    bool hasVisibleFace(const Block& block) const;
 };
 
 namespace std
@@ -395,7 +456,7 @@ int main(int argc, char** argv)
 void init()
 {
     glEnable(GL_DEPTH_TEST); // Abilita il test di profondità
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f); // Colore di sfondo grigio scuro
+    glClearColor(0.0f, 1.0f, 1.0f, 1.0f); // Colore di sfondo grigio scuro
 
     // Abilita l'illuminazione e la prima sorgente di luce
     glEnable(GL_LIGHTING);
@@ -415,7 +476,7 @@ void init()
     camera.reset();
     world.generationSeed = 12345; // Seme per la generazione del mondo
 
-    int dim = 3;
+    int dim = 6;
     for (int i = 0; i <= dim * 2; i++)
     {
         for (int j = 0; j <= dim * 2; j++)
@@ -440,6 +501,21 @@ void Block::draw(const Chunk& chunk) const
     glPushMatrix();
     glTranslatef(pos.x, pos.y, pos.z);
     glScalef(scale, scale, scale);
+
+    if (isTransparent && type == BlockType::WATER)
+    {
+        glScalef(1.0f, 0.8f, 1.0f); // Riduci solo l'altezza (asse Y)
+    }
+    else
+    {
+        glScalef(scale, scale, scale); // Scala uniforme per gli altri blocchi
+    }
+
+    if (isTransparent)
+    {
+        glEnable(GL_BLEND); // Abilita il blending per la trasparenza
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
 
     glBegin(GL_QUADS);
 
@@ -562,36 +638,53 @@ bool isFaceVisible(const Point3D& blockPos, const Point3D& faceNormalVect)
     return dotProduct < 0.0f; // Face is visible if the dot product is positive
 }
 
-void addChunk(Point2D pos) {
+void addChunk(Point2D pos)
+{
     world.chunksMap[pos] = Chunk(pos, world.generationSeed);
-    //std::cout << "Chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
+    std::cout << "Chunk(" << pos.x << ", " << pos.z << ") aggiunto." << std::endl;
 }
 // Costruttore predefinito
 Chunk::Chunk() : pos(Point2D(0, 0)) {}
 
 // Costruttore del Chunk con generazione basata su Perlin Noise
-Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, position.z * CHUNK_SIZE)) {
+Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, position.z * CHUNK_SIZE))
+{
     PerlinNoise noise(seed); // Crea un'istanza di PerlinNoise con il seme specificato
-
     blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT)));
 
-    for (int x = 0; x < CHUNK_SIZE; ++x) {
-        for (int z = 0; z < CHUNK_SIZE; ++z) {
-            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+    float globalWaterLevel = CHUNK_HEIGHT / 2; // Livello globale dell'acqua ("livello del mare")
+
+    for (int x = 0; x < CHUNK_SIZE; ++x)
+    {
+        for (int z = 0; z < CHUNK_SIZE; ++z)
+        {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
+            {
                 float posX = pos.x + x;
                 float posY = static_cast<float>(y);
                 float posZ = pos.z + z;
 
+                float scaleNoiseFactor = 0.01f;
                 // Calcola il valore del Perlin Noise
-                float noiseValue = noise.getNoise(posX * 0.1f, posY * 0.1f, posZ * 0.1f);
+                float noiseValue = noise.getNoise(posX * scaleNoiseFactor, posY * scaleNoiseFactor * 5, posZ * scaleNoiseFactor);
 
                 BlockType blockType;
-                if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f) {
-                    blockType = BlockType::AIR;
-                } else if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f - 4) {
-                    blockType = BlockType::DIRT;
-                } else {
-                    blockType = BlockType::STONE;
+
+                if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f + 2)
+                {
+                    blockType = BlockType::AIR; // Aria sopra il terreno
+                }
+                else if (posY < 2)
+                {
+                    blockType = BlockType::BEDROCK; // Bedrock sotto il terreno
+                }
+                else if (posY > CHUNK_HEIGHT / 2 + noiseValue * 10.0f - 6) // spessore del terreno in superficie
+                {
+                    blockType = BlockType::DIRT; // Terra in superficie
+                }
+                else
+                {
+                    blockType = BlockType::STONE; // Pietra nel mezzo
                 }
 
                 blocks[x][z][y] = Block(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), blockType);
@@ -599,12 +692,71 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
         }
     }
 
+    // Generazione dei laghi in depressioni del terreno
+    for (int x = 0; x < CHUNK_SIZE; ++x)
+    {
+        for (int z = 0; z < CHUNK_SIZE; ++z)
+        {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
+            {
+                float posX = pos.x + x;
+                float posY = static_cast<float>(y);
+                float posZ = pos.z + z;
+
+                if(posY < globalWaterLevel && blocks[x][z][y].type == BlockType::AIR)
+                {
+                    blocks[x][z][y] = Block(Point3D(posX, posY, posZ), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::WATER);
+                }
+            }
+        }
+    }
+
+    // Aggiungi sabbia intorno e sotto i blocchi d'acqua
+for (int x = 0; x < CHUNK_SIZE; ++x)
+{
+    for (int z = 0; z < CHUNK_SIZE; ++z)
+    {
+        for (int y = 0; y < CHUNK_HEIGHT; ++y)
+        {
+            if (blocks[x][z][y].type == BlockType::WATER)
+            {
+                // Controlla i blocchi sotto l'acqua
+                if (y > 0 && blocks[x][z][y - 1].type != BlockType::WATER)
+                {
+                    blocks[x][z][y - 1] = Block(Point3D(pos.x + x, y - 1, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                }
+
+                // Controlla i blocchi attorno all'acqua (sinistra, destra, davanti, dietro)
+                if (x > 0 && blocks[x - 1][z][y].type != BlockType::WATER)
+                {
+                    blocks[x - 1][z][y] = Block(Point3D(pos.x + x - 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                }
+                if (x < CHUNK_SIZE - 1 && blocks[x + 1][z][y].type != BlockType::WATER)
+                {
+                    blocks[x + 1][z][y] = Block(Point3D(pos.x + x + 1, y, pos.z + z), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                }
+                if (z > 0 && blocks[x][z - 1][y].type != BlockType::WATER)
+                {
+                    blocks[x][z - 1][y] = Block(Point3D(pos.x + x, y, pos.z + z - 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                }
+                if (z < CHUNK_SIZE - 1 && blocks[x][z + 1][y].type != BlockType::WATER)
+                {
+                    blocks[x][z + 1][y] = Block(Point3D(pos.x + x, y, pos.z + z + 1), 1.0f, Rotation(0.0f, 0.0f, 0.0f), BlockType::SAND);
+                }
+            }
+        }
+    }
+}
+
     // Aggiorna la visibilità delle facce
-    for (int x = 0; x < CHUNK_SIZE; ++x) {
-        for (int z = 0; z < CHUNK_SIZE; ++z) {
-            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+    for (int x = 0; x < CHUNK_SIZE; ++x)
+    {
+        for (int z = 0; z < CHUNK_SIZE; ++z)
+        {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
+            {
                 Block& currentBlock = blocks[x][z][y];
-                if (currentBlock.type == BlockType::AIR || currentBlock.type == BlockType::_VOID) continue;
+                if (currentBlock.isTransparent) continue;
 
                 currentBlock.setFaceVisibility(FaceType::FRONT, !isBlock(Point3D(pos.x + x, y, pos.z + z + 1)));
                 currentBlock.setFaceVisibility(FaceType::BACK, !isBlock(Point3D(pos.x + x, y, pos.z + z - 1)));
@@ -622,6 +774,7 @@ Chunk::Chunk(Point2D position, int seed) : pos(Point2D(position.x * CHUNK_SIZE, 
 // Metodo per disegnare il chunk
 void Chunk::draw() const
 {
+    // Disegna prima i blocchi opachi
     for (int x = 0; x < CHUNK_SIZE; ++x)
     {
         for (int z = 0; z < CHUNK_SIZE; ++z)
@@ -629,25 +782,41 @@ void Chunk::draw() const
             for (int y = 0; y < CHUNK_HEIGHT; ++y)
             {
                 const Block& block = blocks[x][z][y];
-
-                // Verifica se il blocco ha almeno una faccia visibile
-                bool hasVisibleFace = false;
-                for (int i = 0; i < 6; ++i)
-                {
-                    if (block.faces[i].isVisible)
-                    {
-                        hasVisibleFace = true;
-                        break;
-                    }
-                }
-
-                if (hasVisibleFace)
+                if (!block.isTransparent && hasVisibleFace(block))
                 {
                     block.draw(*this);
                 }
             }
         }
     }
+
+    // Poi disegna i blocchi trasparenti
+    for (int x = 0; x < CHUNK_SIZE; ++x)
+    {
+        for (int z = 0; z < CHUNK_SIZE; ++z)
+        {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y)
+            {
+                const Block& block = blocks[x][z][y];
+                if (block.isTransparent && hasVisibleFace(block))
+                {
+                    block.draw(*this);
+                }
+            }
+        }
+    }
+}
+
+bool Chunk::hasVisibleFace(const Block& block) const
+{
+    for (int i = 0; i < 6; ++i)
+    {
+        if (block.faces[i].isVisible)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Chunk::addBlock(const Point3D& blockPos, BlockType type)
@@ -699,11 +868,15 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
         FaceType::BACK, FaceType::FRONT, FaceType::RIGHT, FaceType::LEFT, FaceType::BOTTOM, FaceType::TOP
     };
 
-    auto updateBlock = [&](Block& block, size_t directionIndex)
+    auto updateBlock = [&](Block& block, size_t directionIndex, const Point3D& adjPos)
     {
-        if (block.type != BlockType::_VOID && block.type != BlockType::AIR)
+        if (isBlock(adjPos))
         {
             block.setFaceVisibility(oppositeFaces[directionIndex], false);
+        }
+        else
+        {
+            block.setFaceVisibility(oppositeFaces[directionIndex], true);
         }
     };
 
@@ -727,7 +900,21 @@ void Chunk::updateAdjacentBlocks(const Point3D& blockPos)
                 adjLocalZ >= 0 && adjLocalZ < CHUNK_SIZE &&
                 adjLocalY >= 0 && adjLocalY < CHUNK_HEIGHT)
         {
-            updateBlock(adjacentChunk->blocks[adjLocalX][adjLocalZ][adjLocalY], i);
+            Block& currentBlock = blocks[static_cast<int>(blockPos.x - pos.x)][static_cast<int>(blockPos.z - pos.z)][static_cast<int>(blockPos.y)];
+            Block& adjacentBlock = adjacentChunk->blocks[adjLocalX][adjLocalZ][adjLocalY];
+
+            // Se il blocco adiacente è trasparente, mostra la faccia
+            if (adjacentBlock.isTransparent)
+            {
+                currentBlock.setFaceVisibility(static_cast<FaceType>(i), true);
+            }
+            else
+            {
+                currentBlock.setFaceVisibility(static_cast<FaceType>(i), false);
+            }
+
+            // Aggiorna la faccia opposta nel blocco adiacente
+            updateBlock(adjacentBlock, i, blockPos);
         }
     }
 }
@@ -754,7 +941,7 @@ bool Chunk::isBlock(Point3D blockPos) const
             localZ >= 0 && localZ < CHUNK_SIZE &&
             localY >= 0 && localY < CHUNK_HEIGHT)
     {
-        return (blocks[localX][localZ][localY].type != BlockType::_VOID && blocks[localX][localZ][localY].type != BlockType::AIR);
+        return (!blocks[localX][localZ][localY].isTransparent);
     }
 
     // Se il blocco non è nel chunk corrente, calcola le coordinate del chunk adiacente
@@ -776,8 +963,8 @@ bool Chunk::isBlock(Point3D blockPos) const
             adjLocalZ >= 0 && adjLocalZ < CHUNK_SIZE &&
             blockPos.y >= 0 && blockPos.y < CHUNK_HEIGHT)
     {
-        return (targetChunk->blocks[adjLocalX][adjLocalZ][static_cast<int>(blockPos.y)].type != BlockType::_VOID &&
-                targetChunk->blocks[adjLocalX][adjLocalZ][static_cast<int>(blockPos.y)].type != BlockType::AIR);
+        Block& targetBlock = targetChunk->blocks[adjLocalX][adjLocalZ][static_cast<int>(blockPos.y)];
+        return (!targetBlock.isTransparent);
     }
 
     // Se il blocco non è valido, restituisci false
@@ -799,11 +986,14 @@ float toRadians(float degrees)
 
 void drawText(const std::string& text, Point2D pos, void* font)
 {
+    glDisable(GL_LIGHTING); // Disabilita la luce
+    glColor3f(1.0f, 1.0f, 1.0f); // Imposta il colore del testo a bianco
     glRasterPos2f(pos.x, pos.z);
     for (char c : text)
     {
         glutBitmapCharacter(font, c);
     }
+    glEnable(GL_LIGHTING); // Riattiva la luce
 }
 
 void display()
@@ -848,9 +1038,9 @@ void display()
 
         if (showChunkBorder)
         {
-            glColor3f(0.5f, 0.5f, 0.5f); // Grigio
+            glDisable(GL_LIGHTING); // Disabilita la luce
+            glColor3f(0.5f, 0.5f, 0.5f); // Imposta il colore delle linee a grigio
             glLineWidth(2.0f);
-
             glBegin(GL_LINES);
             float lineHeight = 500.0f;
             float xMin = chunk.pos.x - 0.5f;
@@ -861,17 +1051,15 @@ void display()
             // Linee verticali delimitanti il chunk
             glVertex3f(xMin, 0.0f, zMin);
             glVertex3f(xMin, lineHeight, zMin);
-
             glVertex3f(xMax, 0.0f, zMin);
             glVertex3f(xMax, lineHeight, zMin);
-
             glVertex3f(xMax, 0.0f, zMax);
             glVertex3f(xMax, lineHeight, zMax);
-
             glVertex3f(xMin, 0.0f, zMax);
             glVertex3f(xMin, lineHeight, zMax);
 
             glEnd();
+            glEnable(GL_LIGHTING); // Riattiva la luce
         }
     }
 
@@ -952,8 +1140,8 @@ void placeBlock()
 
 void keyboard(unsigned char key, int, int)
 {
-    float horizontalStep = 1.0f;
-    float verticalStep = 1.0f;
+    float horizontalStep = 10.0f;
+    float verticalStep = 5.0f;
 
     switch (key)
     {
