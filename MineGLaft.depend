@@ -12,3 +12,16 @@
 	<chrono>
 	<algorithm>
 
+1739052322 source:c:\users\loren\documents\github\mineglaft\main.cpp
+	<GL/glut.h>
+	<cmath>
+	<vector>
+	<random>
+	<unordered_map>
+	<functional>
+	<array>
+	<iostream>
+	<string>
+	<chrono>
+	<algorithm>
+
