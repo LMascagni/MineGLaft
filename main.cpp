@@ -246,14 +246,19 @@ class Chunk;
 // Enumerazione globale per i tipi di blocco
 enum class BlockType
 {
-   TEST,
-   AIR,
-   GRASS,
-   DIRT,
-   STONE,
-   SAND,
-   WATER,
-   BEDROCK
+   TEST,       //01
+   AIR,        //00
+   GRASS,      //02
+   DIRT,       //03
+   STONE,      //04
+   SAND,       //05
+   WATER,      //06
+   BEDROCK,    //07
+   WOOD,       //08
+   LEAVES,     //09
+   PLANKS,     //10
+   BRICKS     //11
+
 };
 
 // Classe Blocco
@@ -294,59 +299,55 @@ public:
    // i blocchi sotto quella altezza saranno di tipo TEST, quelli sopra rimangono AIR.
    void generate(const PerlinNoise &noise)
    {
-      float frequency = 0.01f;
-      // Frequenza separata per il dirt per ottenere variazioni più fluide
-      float dirtFrequency = 0.5f;
+      // Parametri per una generazione in stile Minecraft
+      float frequency = 0.05f;
+      int baseHeight = 50;
+      int amplitude = 20; // Variazione di altezza (+/- 20)
+      
       for (int x = 0; x < CHUNK_SIZE; x++)
       {
-         for (int z = 0; z < CHUNK_SIZE; z++)
-         {
-            int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
-            int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
-            float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
-            int surfaceHeight = static_cast<int>(((n + 1.0f) / 2.0f) * CHUNK_HEIGHT);
-
-            // Calcola lo spessore del DIRT in maniera fluida basandoti sul Perlin noise
-            float nDirt = noise.getNoise(globalX * dirtFrequency, 0.0f, globalZ * dirtFrequency);
-            int dirtThickness = 1 + static_cast<int>(((nDirt + 1.0f) / 2.0f) * 3); // Valore da 1 a 4
-
-            // Determina casualmente lo spessore dei blocchi di BEDROCK (tra 1 e 3)
-            int bedrockThickness = 1 + (rand() % 3);
-
-            // Assicura che l'altezza della superficie sia sufficiente per contenere tutti gli strati:
-            int minSurfaceHeight = bedrockThickness + dirtThickness + 1;
-            if (surfaceHeight < minSurfaceHeight)
-               surfaceHeight = minSurfaceHeight;
-
-            for (int y = 0; y < CHUNK_HEIGHT; y++)
-            {
-               if (y > surfaceHeight)
-               {
-                  // Sotto la superficie niente
-                  blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
-               }
-               else if (y == surfaceHeight)
-               {
-                  // Primo blocco della superficie: GRASS
-                  blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
-               }
-               else if (y >= surfaceHeight - dirtThickness)
-               {
-                  // Strato sottostante di DIRT
-                  blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
-               }
-               else if (y < bedrockThickness)
-               {
-                  // Ultimi strati: BEDROCK
-                  blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
-               }
-               else
-               {
-                  // Il resto dello strato intermedio: STONE
-                  blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
-               }
-            }
-         }
+          for (int z = 0; z < CHUNK_SIZE; z++)
+          {
+              int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
+              int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
+              float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
+              int surfaceHeight = baseHeight + static_cast<int>(n * amplitude);
+              
+              // Limita l'altezza superficiale per evitare valori fuori range
+              if (surfaceHeight < 5)
+                 surfaceHeight = 5;
+              if (surfaceHeight >= CHUNK_HEIGHT)
+                 surfaceHeight = CHUNK_HEIGHT - 1;
+              
+              for (int y = 0; y < CHUNK_HEIGHT; y++)
+              {
+                  if (y > surfaceHeight)
+                  {
+                      // Spazio libero sopra il terreno
+                      blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
+                  }
+                  else if (y == surfaceHeight)
+                  {
+                      // Primo blocco della superficie: GRASS
+                      blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+                  }
+                  else if (y >= surfaceHeight - 3)
+                  {
+                      // Strati immediatamente sotto la superficie: DIRT
+                      blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+                  }
+                  else if (y < 5)
+                  {
+                      // Strati bassi: BEDROCK fissa fino al livello 4
+                      blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
+                  }
+                  else
+                  {
+                      // Il resto del sottosuolo: STONE
+                      blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
+                  }
+              }
+          }
       }
    }
 
@@ -675,6 +676,8 @@ void init()
    loadTextures();
 
    camera.reset();
+   //std::cout << "Inserisci il seme per la generazione del mondo: ";
+   //std::cin >> world.generationSeed; // Chiede all'utente di inserire il seme per il Per
    world.generationSeed = 12345; // Seme per PerlinNoise
 
    // Genera una griglia 5x5 di chunk
