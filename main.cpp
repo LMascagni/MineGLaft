@@ -26,7 +26,7 @@
 // COSTANTI GLOBALI
 // ================================
 const int CHUNK_SIZE = 16;
-const int CHUNK_HEIGHT = 100;
+const int CHUNK_HEIGHT = 256;
 const int RENDER_DISTANCE = 20;
 
 #ifndef M_PI
@@ -246,18 +246,19 @@ class Chunk;
 // Enumerazione globale per i tipi di blocco
 enum class BlockType
 {
-   TEST,       //01
-   AIR,        //00
-   GRASS,      //02
-   DIRT,       //03
-   STONE,      //04
-   SAND,       //05
-   WATER,      //06
-   BEDROCK,    //07
-   WOOD,       //08
-   LEAVES,     //09
-   PLANKS,     //10
-   BRICKS     //11
+   TEST,        // 01
+   AIR,         // 00
+   GRASS,       // 02
+   DIRT,        // 03
+   STONE,       // 04
+   SAND,        // 05
+   WATER,       // 06
+   BEDROCK,     // 07
+   WOOD,        // 08
+   LEAVES,      // 09
+   PLANKS,      // 10
+   COBBLESTONE, // 11
+   BRICKS       // 12
 
 };
 
@@ -300,54 +301,54 @@ public:
    void generate(const PerlinNoise &noise)
    {
       // Parametri per una generazione in stile Minecraft
-      float frequency = 0.05f;
-      int baseHeight = 50;
-      int amplitude = 20; // Variazione di altezza (+/- 20)
-      
+      float frequency = 0.01f;
+      int baseHeight = 80;
+      int amplitude = 40; // Variazione di altezza (+/- 20)
+
       for (int x = 0; x < CHUNK_SIZE; x++)
       {
-          for (int z = 0; z < CHUNK_SIZE; z++)
-          {
-              int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
-              int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
-              float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
-              int surfaceHeight = baseHeight + static_cast<int>(n * amplitude);
-              
-              // Limita l'altezza superficiale per evitare valori fuori range
-              if (surfaceHeight < 5)
-                 surfaceHeight = 5;
-              if (surfaceHeight >= CHUNK_HEIGHT)
-                 surfaceHeight = CHUNK_HEIGHT - 1;
-              
-              for (int y = 0; y < CHUNK_HEIGHT; y++)
-              {
-                  if (y > surfaceHeight)
-                  {
-                      // Spazio libero sopra il terreno
-                      blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
-                  }
-                  else if (y == surfaceHeight)
-                  {
-                      // Primo blocco della superficie: GRASS
-                      blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
-                  }
-                  else if (y >= surfaceHeight - 3)
-                  {
-                      // Strati immediatamente sotto la superficie: DIRT
-                      blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
-                  }
-                  else if (y < 5)
-                  {
-                      // Strati bassi: BEDROCK fissa fino al livello 4
-                      blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
-                  }
-                  else
-                  {
-                      // Il resto del sottosuolo: STONE
-                      blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
-                  }
-              }
-          }
+         for (int z = 0; z < CHUNK_SIZE; z++)
+         {
+            int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
+            int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
+            float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
+            int surfaceHeight = baseHeight + static_cast<int>(n * amplitude);
+
+            // Limita l'altezza superficiale per evitare valori fuori range
+            if (surfaceHeight < 5)
+               surfaceHeight = 5;
+            if (surfaceHeight >= CHUNK_HEIGHT)
+               surfaceHeight = CHUNK_HEIGHT - 1;
+
+            for (int y = 0; y < CHUNK_HEIGHT; y++)
+            {
+               if (y > surfaceHeight)
+               {
+                  // Spazio libero sopra il terreno
+                  blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
+               }
+               else if (y == surfaceHeight)
+               {
+                  // Primo blocco della superficie: GRASS
+                  blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+               }
+               else if (y >= surfaceHeight - 3)
+               {
+                  // Strati immediatamente sotto la superficie: DIRT
+                  blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+               }
+               else if (y < 5)
+               {
+                  // Strati bassi: BEDROCK fissa fino al livello 4
+                  blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
+               }
+               else
+               {
+                  // Il resto del sottosuolo: STONE
+                  blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
+               }
+            }
+         }
       }
    }
 
@@ -426,10 +427,10 @@ public:
                   float uOffset = 0 * tileU;
                   float vOffset = typeRow * tileV;
                   addQuadTextured(
-                     bx - half, by - half, bz + half, uOffset, vOffset + tileV,
-                     bx + half, by - half, bz + half, uOffset + tileU, vOffset + tileV,
-                     bx + half, by + half, bz + half, uOffset + tileU, vOffset,
-                     bx - half, by + half, bz + half, uOffset, vOffset);
+                      bx - half, by - half, bz + half, uOffset, vOffset + tileV,
+                      bx + half, by - half, bz + half, uOffset + tileU, vOffset + tileV,
+                      bx + half, by + half, bz + half, uOffset + tileU, vOffset,
+                      bx - half, by + half, bz + half, uOffset, vOffset);
                }
                // Back face (-z) : colonna 1
                if (faceVisible(x, z, y, 0, -1, 0))
@@ -497,7 +498,7 @@ public:
       glBindTexture(GL_TEXTURE_2D, blockTexture);
       glPushMatrix();
       // Rimuovi la traslazione poiché le coordinate dei blocchi sono già globali
-      // glTranslatef(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE); 
+      // glTranslatef(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE);
       glBegin(GL_QUADS);
       for (size_t i = 0, j = 0; i < meshVertices.size(); i += 3, j += 2)
       {
@@ -558,7 +559,41 @@ public:
          }
       }
    }
+
+   // New function prototype:
+   void placeBlock(const Point3D &pos, BlockType type);
 };
+
+void World::placeBlock(const Point3D &pos, BlockType type)
+{
+   // Get the chunk coordinates.
+   Point2D chunkCoords = getChunkCoordinates(pos);
+   auto it = chunksMap.find(chunkCoords);
+   if (it == chunksMap.end())
+   {
+      std::cout << "No chunk found at chunk (" << chunkCoords.x << ", " << chunkCoords.z
+                << ") for block position (" << pos.x << ", " << pos.y << ", " << pos.z << ")." << std::endl;
+      return;
+   }
+
+   // Calculate local coordinates inside the chunk.
+   int localX = static_cast<int>(pos.x) - static_cast<int>(chunkCoords.x * CHUNK_SIZE);
+   int localZ = static_cast<int>(pos.z) - static_cast<int>(chunkCoords.z * CHUNK_SIZE);
+   int localY = static_cast<int>(pos.y);
+
+   // Check bounds.
+   if (localX < 0 || localX >= CHUNK_SIZE || localZ < 0 || localZ >= CHUNK_SIZE || localY < 0 || localY >= CHUNK_HEIGHT)
+   {
+      std::cout << "Block position (" << pos.x << ", " << pos.y << ", " << pos.z << ") is out of chunk bounds." << std::endl;
+      return;
+   }
+
+   // Update the block in the chunk.
+   it->second.blocks[localX][localZ][localY] = Block(type, pos);
+
+   // Recalculate the mesh for the affected chunk.
+   it->second.generateMesh();
+}
 
 class UIRenderer
 {
@@ -629,7 +664,7 @@ std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock:
 float fps = 0.0f;
 
 // Aggiungi all'inizio, accanto alle altre variabili globali:
-bool cameraMovementEnabled = true;
+bool cameraMovementEnabled = false;
 
 // ================================
 // FUNZIONE PRINCIPALE
@@ -638,7 +673,7 @@ int main(int argc, char **argv)
 {
    glutInit(&argc, argv);
    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-   glutInitWindowSize(800, 600);
+   glutInitWindowSize(1200, 1000);
    glutCreateWindow("MineGLaft");
 
    // Inizializza il programma
@@ -676,8 +711,8 @@ void init()
    loadTextures();
 
    camera.reset();
-   //std::cout << "Inserisci il seme per la generazione del mondo: ";
-   //std::cin >> world.generationSeed; // Chiede all'utente di inserire il seme per il Per
+   // std::cout << "Inserisci il seme per la generazione del mondo: ";
+   // std::cin >> world.generationSeed; // Chiede all'utente di inserire il seme per il Per
    world.generationSeed = 12345; // Seme per PerlinNoise
 
    // Genera una griglia 5x5 di chunk
@@ -717,7 +752,7 @@ void UIRenderer::drawText(const std::string &text, Point2D pos, void *font)
    {
       glutBitmapCharacter(font, c);
    }
-   glEnable(GL_TEXTURE_2D);  // Riabilita il texturing
+   glEnable(GL_TEXTURE_2D); // Riabilita il texturing
    glEnable(GL_LIGHTING);
 }
 
@@ -790,8 +825,8 @@ void display()
 
             if (showChunkBorder)
             {
-               //glDisable(GL_LIGHTING); // Disabilita la luce
-               glColor3f(0, 0, 0);     // Imposta il colore delle linee a grigio
+               // glDisable(GL_LIGHTING); // Disabilita la luce
+               glColor3f(0, 0, 0); // Imposta il colore delle linee a grigio
                glLineWidth(2.0f);
                glBegin(GL_LINES);
                float lineHeight = 500.0f;
@@ -869,6 +904,41 @@ void display()
       glMatrixMode(GL_MODELVIEW);
    }
 
+   // Draw a small grey crosshair at the center of the screen
+   glMatrixMode(GL_PROJECTION);
+   glPushMatrix();
+   glLoadIdentity();
+   glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1);
+   glMatrixMode(GL_MODELVIEW);
+   glPushMatrix();
+   glLoadIdentity();
+
+   glDisable(GL_TEXTURE_2D);
+   glColor3f(0.7f, 0.7f, 0.7f); // Set a light grey color
+   glLineWidth(2.0f);
+   int centerX = glutGet(GLUT_WINDOW_WIDTH) / 2;
+   int centerY = glutGet(GLUT_WINDOW_HEIGHT) / 2;
+   int halfSize = 10; // Half size of the cross arms
+   glBegin(GL_LINES);
+   // Horizontal line
+   glVertex2i(centerX - halfSize, centerY);
+   glVertex2i(centerX + halfSize, centerY);
+   // Vertical line
+   glVertex2i(centerX, centerY - halfSize);
+   glVertex2i(centerX, centerY + halfSize);
+   glEnd();
+
+   glPopMatrix();
+   glMatrixMode(GL_PROJECTION);
+   glPopMatrix();
+   glMatrixMode(GL_MODELVIEW);
+
+   // Ripristina il colore bianco in modo che le texture non siano modulate in grigio
+   glColor3f(1.0f, 1.0f, 1.0f);
+
+   // Riabilita il texturing dopo il disegno della UI
+   glEnable(GL_TEXTURE_2D);
+
    glutSwapBuffers();
 }
 
@@ -881,75 +951,75 @@ void keyboard(unsigned char key, int, int)
 
    switch (key)
    {
-      case 27: // ESC: abilita/disabilita il movimento della camera
-         cameraMovementEnabled = !cameraMovementEnabled;
-         if (cameraMovementEnabled)
-         {
-            // Nasconde il cursore quando il movimento è abilitato
-            glutSetCursor(GLUT_CURSOR_NONE);
-            resetMousePosition(); // Assicura che il cursore sia centrato
-         }
-         else
-         {
-            // Mostra il cursore quando il movimento viene disabilitato
-            glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
-         }
-         break;
-      // ... gli altri casi rimangono invariati ...
-      case 'q':
-      case 'Q':
-         wireframeMode = !wireframeMode;
-         if (wireframeMode)
-         {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-         }
-         else
-         {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-         }
-         glutPostRedisplay();
-         break;
-      case 'w':
-         camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
-         camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
-         moved = true;
-         break;
-      case 's':
-         camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
-         camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
-         moved = true;
-         break;
-      case 'd':
-         camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
-         camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
-         moved = true;
-         break;
-      case 'a':
-         camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
-         camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
-         moved = true;
-         break;
-      case ' ':
-         camera.pos.y += verticalStep;
-         moved = true;
-         break;
-      case 'S':
-         camera.pos.y -= verticalStep;
-         moved = true;
-         break;
-      case 'r':
-         camera.reset();
-         moved = true;
-         break;
-      case 'b':
-         showChunkBorder = !showChunkBorder;
-         break;
-      case 'n':
-         showData = !showData;
-         break;
-      case 'p':
-         // world.placeBlock();
-         break;
+   case 27: // ESC: abilita/disabilita il movimento della camera
+      cameraMovementEnabled = !cameraMovementEnabled;
+      if (cameraMovementEnabled)
+      {
+         // Nasconde il cursore quando il movimento è abilitato
+         glutSetCursor(GLUT_CURSOR_NONE);
+         resetMousePosition(); // Assicura che il cursore sia centrato
+      }
+      else
+      {
+         // Mostra il cursore quando il movimento viene disabilitato
+         glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
+      }
+      break;
+   // ... gli altri casi rimangono invariati ...
+   case 'q':
+   case 'Q':
+      wireframeMode = !wireframeMode;
+      if (wireframeMode)
+      {
+         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      }
+      else
+      {
+         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      }
+      glutPostRedisplay();
+      break;
+   case 'w':
+      camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
+      camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
+      moved = true;
+      break;
+   case 's':
+      camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
+      camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
+      moved = true;
+      break;
+   case 'd':
+      camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
+      camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
+      moved = true;
+      break;
+   case 'a':
+      camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
+      camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
+      moved = true;
+      break;
+   case ' ':
+      camera.pos.y += verticalStep;
+      moved = true;
+      break;
+   case 'S':
+      camera.pos.y -= verticalStep;
+      moved = true;
+      break;
+   case 'r':
+      camera.reset();
+      moved = true;
+      break;
+   case 'b':
+      showChunkBorder = !showChunkBorder;
+      break;
+   case 'n':
+      showData = !showData;
+      break;
+   case 'p':
+      world.placeBlock(camera.pos, BlockType::STONE);
+      break;
    }
 
    if (moved)
