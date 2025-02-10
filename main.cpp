@@ -566,33 +566,70 @@ public:
 
 void World::placeBlock(const Point3D &pos, BlockType type)
 {
-   // Get the chunk coordinates.
-   Point2D chunkCoords = getChunkCoordinates(pos);
+   // Arrotonda le coordinate della posizione a interi
+   int blockX = static_cast<int>(std::round(pos.x));
+   int blockY = static_cast<int>(std::round(pos.y));
+   int blockZ = static_cast<int>(std::round(pos.z));
+
+   // Calcola le coordinate del chunk usando il floor
+   int chunkX = static_cast<int>(std::floor(blockX / static_cast<float>(CHUNK_SIZE)));
+   int chunkZ = static_cast<int>(std::floor(blockZ / static_cast<float>(CHUNK_SIZE)));
+   Point2D chunkCoords(chunkX, chunkZ);
+
    auto it = chunksMap.find(chunkCoords);
    if (it == chunksMap.end())
    {
       std::cout << "No chunk found at chunk (" << chunkCoords.x << ", " << chunkCoords.z
-                << ") for block position (" << pos.x << ", " << pos.y << ", " << pos.z << ")." << std::endl;
+                << ") for block position (" << blockX << ", " << blockY << ", " << blockZ << ")." << std::endl;
       return;
    }
 
-   // Calculate local coordinates inside the chunk.
-   int localX = static_cast<int>(pos.x) - static_cast<int>(chunkCoords.x * CHUNK_SIZE);
-   int localZ = static_cast<int>(pos.z) - static_cast<int>(chunkCoords.z * CHUNK_SIZE);
-   int localY = static_cast<int>(pos.y);
+   // Calcola le coordinate locali all'interno del chunk.
+   int localX = blockX - chunkX * CHUNK_SIZE;
+   int localZ = blockZ - chunkZ * CHUNK_SIZE;
+   int localY = blockY;
 
-   // Check bounds.
-   if (localX < 0 || localX >= CHUNK_SIZE || localZ < 0 || localZ >= CHUNK_SIZE || localY < 0 || localY >= CHUNK_HEIGHT)
+   // Controlla i limiti
+   if (localX < 0 || localX >= CHUNK_SIZE ||
+       localZ < 0 || localZ >= CHUNK_SIZE ||
+       localY < 0 || localY >= CHUNK_HEIGHT)
    {
-      std::cout << "Block position (" << pos.x << ", " << pos.y << ", " << pos.z << ") is out of chunk bounds." << std::endl;
+      std::cout << "Block position (" << blockX << ", " << blockY << ", " << blockZ << ") is out of chunk bounds." << std::endl;
       return;
    }
 
-   // Update the block in the chunk.
-   it->second.blocks[localX][localZ][localY] = Block(type, pos);
-
-   // Recalculate the mesh for the affected chunk.
+   // Aggiorna il blocco nel chunk corrente.
+   it->second.blocks[localX][localZ][localY] = Block(type, Point3D(blockX, blockY, blockZ));
    it->second.generateMesh();
+
+   // Aggiorna la mesh dei chunk adiacenti se il blocco tocca il bordo.
+   int directions[6][3] = {
+       {-1, 0, 0},
+       {1, 0, 0},
+       {0, 0, -1},
+       {0, 0, 1},
+       {0, -1, 0},
+       {0, 1, 0} // Anche se il cambio verticale potrebbe non influire su facce laterali
+   };
+
+   for (int i = 0; i < 6; i++)
+   {
+      int nx = blockX + directions[i][0];
+      // int ny = blockY + directions[i][1];
+      int nz = blockZ + directions[i][2];
+      int neighborChunkX = static_cast<int>(std::floor(nx / static_cast<float>(CHUNK_SIZE)));
+      int neighborChunkZ = static_cast<int>(std::floor(nz / static_cast<float>(CHUNK_SIZE)));
+      // Se il blocco adiacente appartiene ad un chunk diverso, aggiorna la sua mesh.
+      if (neighborChunkX != chunkX || neighborChunkZ != chunkZ)
+      {
+         Point2D neighborCoords(neighborChunkX, neighborChunkZ);
+         auto neighborIt = chunksMap.find(neighborCoords);
+         if (neighborIt != chunksMap.end())
+         {
+            neighborIt->second.generateMesh();
+         }
+      }
+   }
 }
 
 class UIRenderer
@@ -825,27 +862,38 @@ void display()
 
             if (showChunkBorder)
             {
-               // glDisable(GL_LIGHTING); // Disabilita la luce
-               glColor3f(0, 0, 0); // Imposta il colore delle linee a grigio
+               // Salva lo stato corrente del colore e dei parametri delle linee
+               glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
+
+               glColor3f(0.0f, 0.0f, 0.0f); // Imposta il colore del bordo a nero
                glLineWidth(2.0f);
                glBegin(GL_LINES);
-               float lineHeight = 500.0f;
-               float xMin = it->second.pos.x - 0.5f;
-               float xMax = it->second.pos.x + CHUNK_SIZE - 0.5f;
-               float zMin = it->second.pos.z - 0.5f;
-               float zMax = it->second.pos.z + CHUNK_SIZE - 0.5f;
+               float lineHeight = static_cast<float>(CHUNK_HEIGHT);
 
-               // Linee verticali delimitanti il chunk
+               // Calcola le coordinate globali del bordo del chunk
+               float globX = it->second.pos.x * CHUNK_SIZE;
+               float globZ = it->second.pos.z * CHUNK_SIZE;
+               float xMin = globX - 0.5f;
+               float xMax = globX + CHUNK_SIZE - 0.5f;
+               float zMin = globZ - 0.5f;
+               float zMax = globZ + CHUNK_SIZE - 0.5f;
+
+               // Disegna i 4 pilastri verticali agli angoli
                glVertex3f(xMin, 0.0f, zMin);
                glVertex3f(xMin, lineHeight, zMin);
+
                glVertex3f(xMax, 0.0f, zMin);
                glVertex3f(xMax, lineHeight, zMin);
+
                glVertex3f(xMax, 0.0f, zMax);
                glVertex3f(xMax, lineHeight, zMax);
+
                glVertex3f(xMin, 0.0f, zMax);
                glVertex3f(xMin, lineHeight, zMax);
                glEnd();
-               glEnable(GL_LIGHTING); // Riattiva la luce
+
+               // Ripristina lo stato precedente (incluso il colore corrente)
+               glPopAttrib();
             }
          }
       }
@@ -945,8 +993,8 @@ void display()
 // Modifica in keyboard(): rimuovi (o commenta) il caso 'v' per evitare che si possano riattivare ombre
 void keyboard(unsigned char key, int, int)
 {
-   float horizontalStep = 2.0f;
-   float verticalStep = 2.0f;
+   float horizontalStep = 0.5f;
+   float verticalStep = 1.0f;
    bool moved = false;
 
    switch (key)
@@ -1018,7 +1066,10 @@ void keyboard(unsigned char key, int, int)
       showData = !showData;
       break;
    case 'p':
-      world.placeBlock(camera.pos, BlockType::STONE);
+      world.placeBlock(camera.pos, BlockType::COBBLESTONE);
+      break;
+   case 'o':
+      world.placeBlock(camera.pos, BlockType::AIR);
       break;
    }
 
