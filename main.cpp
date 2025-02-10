@@ -27,7 +27,7 @@
 // ================================
 const int CHUNK_SIZE = 16;
 const int CHUNK_HEIGHT = 100;
-const int RENDER_DISTANCE = 10;
+const int RENDER_DISTANCE = 20;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -292,23 +292,59 @@ public:
 
    // Genera il chunk di test: per ogni coordinata (x, z), calcola un'altezza in base al PerlinNoise;
    // i blocchi sotto quella altezza saranno di tipo TEST, quelli sopra rimangono AIR.
-   void generateTestChunk(const PerlinNoise &noise)
+   void generate(const PerlinNoise &noise)
    {
       float frequency = 0.01f;
+      // Frequenza separata per il dirt per ottenere variazioni più fluide
+      float dirtFrequency = 0.5f;
       for (int x = 0; x < CHUNK_SIZE; x++)
       {
          for (int z = 0; z < CHUNK_SIZE; z++)
-         { // Correzione qui: z < CHUNK_SIZE
+         {
             int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
             int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
             float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
-            int height = static_cast<int>((n + 1.0f) / 2.0f * CHUNK_HEIGHT);
+            int surfaceHeight = static_cast<int>(((n + 1.0f) / 2.0f) * CHUNK_HEIGHT);
+
+            // Calcola lo spessore del DIRT in maniera fluida basandoti sul Perlin noise
+            float nDirt = noise.getNoise(globalX * dirtFrequency, 0.0f, globalZ * dirtFrequency);
+            int dirtThickness = 1 + static_cast<int>(((nDirt + 1.0f) / 2.0f) * 3); // Valore da 1 a 4
+
+            // Determina casualmente lo spessore dei blocchi di BEDROCK (tra 1 e 3)
+            int bedrockThickness = 1 + (rand() % 3);
+
+            // Assicura che l'altezza della superficie sia sufficiente per contenere tutti gli strati:
+            int minSurfaceHeight = bedrockThickness + dirtThickness + 1;
+            if (surfaceHeight < minSurfaceHeight)
+               surfaceHeight = minSurfaceHeight;
+
             for (int y = 0; y < CHUNK_HEIGHT; y++)
             {
-               if (y < height)
-                  blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
-               else
+               if (y > surfaceHeight)
+               {
+                  // Sotto la superficie niente
                   blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
+               }
+               else if (y == surfaceHeight)
+               {
+                  // Primo blocco della superficie: GRASS
+                  blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+               }
+               else if (y >= surfaceHeight - dirtThickness)
+               {
+                  // Strato sottostante di DIRT
+                  blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+               }
+               else if (y < bedrockThickness)
+               {
+                  // Ultimi strati: BEDROCK
+                  blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
+               }
+               else
+               {
+                  // Il resto dello strato intermedio: STONE
+                  blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
+               }
             }
          }
       }
@@ -389,10 +425,10 @@ public:
                   float uOffset = 0 * tileU;
                   float vOffset = typeRow * tileV;
                   addQuadTextured(
-                      bx - half, by - half, bz + half, uOffset, vOffset,
-                      bx + half, by - half, bz + half, uOffset + tileU, vOffset,
-                      bx + half, by + half, bz + half, uOffset + tileU, vOffset + tileV,
-                      bx - half, by + half, bz + half, uOffset, vOffset + tileV);
+                     bx - half, by - half, bz + half, uOffset, vOffset + tileV,
+                     bx + half, by - half, bz + half, uOffset + tileU, vOffset + tileV,
+                     bx + half, by + half, bz + half, uOffset + tileU, vOffset,
+                     bx - half, by + half, bz + half, uOffset, vOffset);
                }
                // Back face (-z) : colonna 1
                if (faceVisible(x, z, y, 0, -1, 0))
@@ -400,10 +436,10 @@ public:
                   float uOffset = 1 * tileU;
                   float vOffset = typeRow * tileV;
                   addQuadTextured(
-                      bx + half, by - half, bz - half, uOffset, vOffset,
-                      bx - half, by - half, bz - half, uOffset + tileU, vOffset,
-                      bx - half, by + half, bz - half, uOffset + tileU, vOffset + tileV,
-                      bx + half, by + half, bz - half, uOffset, vOffset + tileV);
+                      bx + half, by - half, bz - half, uOffset, vOffset + tileV,
+                      bx - half, by - half, bz - half, uOffset + tileU, vOffset + tileV,
+                      bx - half, by + half, bz - half, uOffset + tileU, vOffset,
+                      bx + half, by + half, bz - half, uOffset, vOffset);
                }
                // Left face (-x) : colonna 2
                if (faceVisible(x, z, y, -1, 0, 0))
@@ -411,10 +447,10 @@ public:
                   float uOffset = 2 * tileU;
                   float vOffset = typeRow * tileV;
                   addQuadTextured(
-                      bx - half, by - half, bz - half, uOffset, vOffset,
-                      bx - half, by - half, bz + half, uOffset + tileU, vOffset,
-                      bx - half, by + half, bz + half, uOffset + tileU, vOffset + tileV,
-                      bx - half, by + half, bz - half, uOffset, vOffset + tileV);
+                      bx - half, by - half, bz - half, uOffset, vOffset + tileV,
+                      bx - half, by - half, bz + half, uOffset + tileU, vOffset + tileV,
+                      bx - half, by + half, bz + half, uOffset + tileU, vOffset,
+                      bx - half, by + half, bz - half, uOffset, vOffset);
                }
                // Right face (+x) : colonna 3
                if (faceVisible(x, z, y, 1, 0, 0))
@@ -422,10 +458,10 @@ public:
                   float uOffset = 3 * tileU;
                   float vOffset = typeRow * tileV;
                   addQuadTextured(
-                      bx + half, by - half, bz + half, uOffset, vOffset,
-                      bx + half, by - half, bz - half, uOffset + tileU, vOffset,
-                      bx + half, by + half, bz - half, uOffset + tileU, vOffset + tileV,
-                      bx + half, by + half, bz + half, uOffset, vOffset + tileV);
+                      bx + half, by - half, bz + half, uOffset, vOffset + tileV,
+                      bx + half, by - half, bz - half, uOffset + tileU, vOffset + tileV,
+                      bx + half, by + half, bz - half, uOffset + tileU, vOffset,
+                      bx + half, by + half, bz + half, uOffset, vOffset);
                }
                // Top face (+y) : colonna 4
                if (faceVisible(x, z, y, 0, 0, 1))
@@ -459,9 +495,9 @@ public:
    {
       glBindTexture(GL_TEXTURE_2D, blockTexture);
       glPushMatrix();
-      glTranslatef(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE);
+      // Rimuovi la traslazione poiché le coordinate dei blocchi sono già globali
+      // glTranslatef(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE); 
       glBegin(GL_QUADS);
-      // Per ogni vertice (ogni 4 vertici hanno 2 coordinate UV ciascuno)
       for (size_t i = 0, j = 0; i < meshVertices.size(); i += 3, j += 2)
       {
          glTexCoord2f(meshTexCoords[j], meshTexCoords[j + 1]);
@@ -505,6 +541,22 @@ public:
    {
       // Attualmente non fa nulla in quanto si usa un chunk di test fisso.
    }
+
+   // Metodo per generare una griglia di chunk
+   void generateChunkGrid(int gridSize, const PerlinNoise &noise)
+   {
+      for (int i = -gridSize; i <= gridSize; ++i)
+      {
+         for (int j = -gridSize; j <= gridSize; ++j)
+         {
+            Point2D chunkPos(i, j);
+            Chunk chunk(chunkPos);
+            chunk.generate(noise);
+            chunk.generateMesh();
+            chunksMap[chunkPos] = chunk;
+         }
+      }
+   }
 };
 
 class UIRenderer
@@ -523,9 +575,7 @@ bool isFaceVisible(const Point3D &blockPos, const Point3D &faceNormalVect);
 void display();
 
 void keyboard(unsigned char key, int x, int y);
-void processMouse(int button, int state, int x, int y);
-void motionMouse(int x, int y);
-void passiveMouse(int x, int y);
+void mouseMotion(int x, int y);
 void resetMousePosition();
 
 // Aggiungi una semplice implementazione per checkWorldIntegrity() (stub)
@@ -577,6 +627,9 @@ int lastMouseX = 0, lastMouseY = 0; // Variabili globali per tracciare la posizi
 std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
 float fps = 0.0f;
 
+// Aggiungi all'inizio, accanto alle altre variabili globali:
+bool cameraMovementEnabled = true;
+
 // ================================
 // FUNZIONE PRINCIPALE
 // ================================
@@ -595,9 +648,10 @@ int main(int argc, char **argv)
    // Registra le funzioni di callback
    glutDisplayFunc(display);
    glutKeyboardFunc(keyboard);
-   glutMouseFunc(processMouse);         // Gestione clic del mouse
-   glutMotionFunc(motionMouse);         // Gestione movimento del mouse con pulsante premuto
-   glutPassiveMotionFunc(passiveMouse); // Gestione movimento del mouse senza pulsante premuto
+   // Rimuovi o commenta glutMouseFunc(processMouse);
+   // Sostituisci glutMotionFunc(motionMouse) e glutPassiveMotionFunc(passiveMouse) con:
+   glutMotionFunc(mouseMotion);
+   glutPassiveMotionFunc(mouseMotion);
 
    // Avvia il ciclo principale di GLUT
    glutMainLoop();
@@ -621,14 +675,11 @@ void init()
    loadTextures();
 
    camera.reset();
-   world.generationSeed = 1234; // Seme per PerlinNoise
+   world.generationSeed = 12345; // Seme per PerlinNoise
 
-   // Genera un chunk di test al chunk (0,0)
+   // Genera una griglia 5x5 di chunk
    PerlinNoise noise(world.generationSeed);
-   Chunk testChunk(Point2D(0, 0));
-   testChunk.generateTestChunk(noise);
-   testChunk.generateMesh(); // Puoi comunque usare la mesh se desideri per modalità alternative
-   world.chunksMap[Point2D(0, 0)] = testChunk;
+   world.generateChunkGrid(5, noise);
 }
 
 void Camera::reset()
@@ -654,15 +705,16 @@ float toRadians(float degrees)
 
 void UIRenderer::drawText(const std::string &text, Point2D pos, void *font)
 {
+   glDisable(GL_TEXTURE_2D); // Disabilita il texturing per evitare che colori e texture influenzino il testo
    glDisable(GL_LIGHTING);
-   glColor3f(1.0f, 1.0f, 1.0f);
-   glRasterPos2f(pos.x, pos.z);
+   glColor3f(1.0f, 1.0f, 1.0f); // Forza il colore bianco
 
+   glRasterPos2f(pos.x, pos.z);
    for (char c : text)
    {
       glutBitmapCharacter(font, c);
    }
-
+   glEnable(GL_TEXTURE_2D);  // Riabilita il texturing
    glEnable(GL_LIGHTING);
 }
 
@@ -735,7 +787,7 @@ void display()
 
             if (showChunkBorder)
             {
-               glDisable(GL_LIGHTING); // Disabilita la luce
+               //glDisable(GL_LIGHTING); // Disabilita la luce
                glColor3f(0, 0, 0);     // Imposta il colore delle linee a grigio
                glLineWidth(2.0f);
                glBegin(GL_LINES);
@@ -805,6 +857,7 @@ void display()
       UIRenderer::drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45));
       Point2D chunkCoords = world.getChunkCoordinates(camera.pos);
       UIRenderer::drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + "," + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
+      UIRenderer::drawText("Seed: " + std::to_string(world.generationSeed), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 75));
 
       // Ripristina le impostazioni OpenGL
       glPopMatrix();
@@ -819,67 +872,81 @@ void display()
 // Modifica in keyboard(): rimuovi (o commenta) il caso 'v' per evitare che si possano riattivare ombre
 void keyboard(unsigned char key, int, int)
 {
-   float horizontalStep = 10.0f;
-   float verticalStep = 5.0f;
+   float horizontalStep = 2.0f;
+   float verticalStep = 2.0f;
    bool moved = false;
 
    switch (key)
    {
-   case 'q':
-   case 'Q':
-      wireframeMode = !wireframeMode;
-      if (wireframeMode)
-      {
-         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-      }
-      else
-      {
-         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-      }
-      glutPostRedisplay();
-      break;
-      // ... il resto dei casi rimane invariato ...
-   case 'w':
-      camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
-      camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
-      moved = true;
-      break;
-   case 's':
-      camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
-      camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
-      moved = true;
-      break;
-   case 'd':
-      camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
-      camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
-      moved = true;
-      break;
-   case 'a':
-      camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
-      camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
-      moved = true;
-      break;
-   case ' ':
-      camera.pos.y += verticalStep;
-      moved = true;
-      break;
-   case 'S':
-      camera.pos.y -= verticalStep;
-      moved = true;
-      break;
-   case 'r':
-      camera.reset();
-      moved = true;
-      break;
-   case 'b':
-      showChunkBorder = !showChunkBorder;
-      break;
-   case 'n':
-      showData = !showData;
-      break;
-   case 'p':
-      // world.placeBlock();
-      break;
+      case 27: // ESC: abilita/disabilita il movimento della camera
+         cameraMovementEnabled = !cameraMovementEnabled;
+         if (cameraMovementEnabled)
+         {
+            // Nasconde il cursore quando il movimento è abilitato
+            glutSetCursor(GLUT_CURSOR_NONE);
+            resetMousePosition(); // Assicura che il cursore sia centrato
+         }
+         else
+         {
+            // Mostra il cursore quando il movimento viene disabilitato
+            glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
+         }
+         break;
+      // ... gli altri casi rimangono invariati ...
+      case 'q':
+      case 'Q':
+         wireframeMode = !wireframeMode;
+         if (wireframeMode)
+         {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+         }
+         else
+         {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+         }
+         glutPostRedisplay();
+         break;
+      case 'w':
+         camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
+         camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
+         moved = true;
+         break;
+      case 's':
+         camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
+         camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
+         moved = true;
+         break;
+      case 'd':
+         camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
+         camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
+         moved = true;
+         break;
+      case 'a':
+         camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
+         camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
+         moved = true;
+         break;
+      case ' ':
+         camera.pos.y += verticalStep;
+         moved = true;
+         break;
+      case 'S':
+         camera.pos.y -= verticalStep;
+         moved = true;
+         break;
+      case 'r':
+         camera.reset();
+         moved = true;
+         break;
+      case 'b':
+         showChunkBorder = !showChunkBorder;
+         break;
+      case 'n':
+         showData = !showData;
+         break;
+      case 'p':
+         // world.placeBlock();
+         break;
    }
 
    if (moved)
@@ -900,28 +967,25 @@ void processMouse(int button, int state, int x, int y)
    }
 }
 
-// Funzione per gestire il movimento del mouse con pulsante premuto
-void motionMouse(int x, int y)
+void mouseMotion(int x, int y)
 {
-   int deltaX = x - lastMouseX;
-   int deltaY = y - lastMouseY;
+   if (cameraMovementEnabled)
+   {
+      int deltaX = x - lastMouseX;
+      int deltaY = y - lastMouseY;
 
-   camera.rot.yRot += static_cast<float>(deltaX) * 0.25f; // Rotazione orizzontale
-   camera.rot.xRot -= static_cast<float>(deltaY) * 0.25f; // Rotazione verticale
+      camera.rot.yRot += static_cast<float>(deltaX) * 0.25f; // Rotazione orizzontale
+      camera.rot.xRot -= static_cast<float>(deltaY) * 0.25f; // Rotazione verticale
 
-   camera.rot.xRot = std::max(-89.9f, std::min(89.9f, camera.rot.xRot)); // Limita la rotazione verticale
+      // Limita la rotazione verticale
+      camera.rot.xRot = std::max(-89.9f, std::min(89.9f, camera.rot.xRot));
+   }
 
    lastMouseX = x;
    lastMouseY = y;
-
-   resetMousePosition(); // Reimposta il cursore al centro
+   if (cameraMovementEnabled)
+      resetMousePosition(); // Riporta il cursore al centro
    glutPostRedisplay();
-}
-
-// Funzione per gestire il movimento del mouse passivo
-void passiveMouse(int x, int y)
-{
-   // Puoi implementare una logica simile a motionMouse() qui, se necessario
 }
 
 // Funzione per reimpostare la posizione del mouse al centro della finestra
