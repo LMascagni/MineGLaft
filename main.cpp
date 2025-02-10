@@ -650,6 +650,9 @@ void display();
 void keyboard(unsigned char key, int x, int y);
 void mouseMotion(int x, int y);
 void resetMousePosition();
+void processMouse(int button, int state, int x, int y); // Prototipo aggiunto
+
+void updateBlockHighlight();
 
 // Aggiungi una semplice implementazione per checkWorldIntegrity() (stub)
 void checkWorldIntegrity()
@@ -702,6 +705,9 @@ float fps = 0.0f;
 
 // Aggiungi all'inizio, accanto alle altre variabili globali:
 bool cameraMovementEnabled = false;
+bool showBlockHighlight = false; // Variabile globale per l'evidenziazione del blocco
+Point3D highlightedBlockPos;     // Posizione del blocco evidenziato
+Point3D previewBlockPos;
 
 // ================================
 // FUNZIONE PRINCIPALE
@@ -721,8 +727,7 @@ int main(int argc, char **argv)
    // Registra le funzioni di callback
    glutDisplayFunc(display);
    glutKeyboardFunc(keyboard);
-   // Rimuovi o commenta glutMouseFunc(processMouse);
-   // Sostituisci glutMotionFunc(motionMouse) e glutPassiveMotionFunc(passiveMouse) con:
+   glutMouseFunc(processMouse);
    glutMotionFunc(mouseMotion);
    glutPassiveMotionFunc(mouseMotion);
 
@@ -759,7 +764,7 @@ void init()
 
 void Camera::reset()
 {
-   pos = Point3D(-4 * CHUNK_SIZE, 10 * CHUNK_SIZE, -4 * CHUNK_SIZE);
+   pos = Point3D(0, 80, 0);
    rot = Rotation(-30.0f, 45.0f, 0.0f);
    glutPostRedisplay();
 }
@@ -899,6 +904,58 @@ void display()
       }
    }
 
+   // Aggiorna la preview dell'evidenziazione ogni frame
+   updateBlockHighlight();
+
+   if (showBlockHighlight)
+   {
+      glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
+      glColor3f(0.0f, 0.0f, 0.0f); // Colore nero per il wireframe
+      glLineWidth(6.0f);
+      glBegin(GL_LINES);
+
+      // Calcola i limiti del cubo (lato 1)
+      float xMin = highlightedBlockPos.x - 0.5f;
+      float xMax = highlightedBlockPos.x + 0.5f;
+      float yMin = highlightedBlockPos.y - 0.5f;
+      float yMax = highlightedBlockPos.y + 0.5f;
+      float zMin = highlightedBlockPos.z - 0.5f;
+      float zMax = highlightedBlockPos.z + 0.5f;
+
+      // Bordo inferiore
+      glVertex3f(xMin, yMin, zMin);
+      glVertex3f(xMax, yMin, zMin);
+      glVertex3f(xMax, yMin, zMin);
+      glVertex3f(xMax, yMin, zMax);
+      glVertex3f(xMax, yMin, zMax);
+      glVertex3f(xMin, yMin, zMax);
+      glVertex3f(xMin, yMin, zMax);
+      glVertex3f(xMin, yMin, zMin);
+
+      // Bordo superiore
+      glVertex3f(xMin, yMax, zMin);
+      glVertex3f(xMax, yMax, zMin);
+      glVertex3f(xMax, yMax, zMin);
+      glVertex3f(xMax, yMax, zMax);
+      glVertex3f(xMax, yMax, zMax);
+      glVertex3f(xMin, yMax, zMax);
+      glVertex3f(xMin, yMax, zMax);
+      glVertex3f(xMin, yMax, zMin);
+
+      // Collega gli spigoli verticali
+      glVertex3f(xMin, yMin, zMin);
+      glVertex3f(xMin, yMax, zMin);
+      glVertex3f(xMax, yMin, zMin);
+      glVertex3f(xMax, yMax, zMin);
+      glVertex3f(xMax, yMin, zMax);
+      glVertex3f(xMax, yMax, zMax);
+      glVertex3f(xMin, yMin, zMax);
+      glVertex3f(xMin, yMax, zMax);
+
+      glEnd();
+      glPopAttrib();
+   }
+
    if (showData)
    {
       glMatrixMode(GL_PROJECTION);
@@ -962,11 +1019,11 @@ void display()
    glLoadIdentity();
 
    glDisable(GL_TEXTURE_2D);
-   glColor3f(0.7f, 0.7f, 0.7f); // Set a light grey color
-   glLineWidth(2.0f);
+   glColor3f(0.2f, 0.2f, 0.2f); // Set a light grey color
+   glLineWidth(4.0f);
    int centerX = glutGet(GLUT_WINDOW_WIDTH) / 2;
    int centerY = glutGet(GLUT_WINDOW_HEIGHT) / 2;
-   int halfSize = 10; // Half size of the cross arms
+   int halfSize = 15; // Half size of the cross arms
    glBegin(GL_LINES);
    // Horizontal line
    glVertex2i(centerX - halfSize, centerY);
@@ -1081,14 +1138,35 @@ void keyboard(unsigned char key, int, int)
    glutPostRedisplay();
 }
 
-// Funzione per gestire i clic del mouse
 void processMouse(int button, int state, int x, int y)
 {
-   if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
+   lastMouseX = x;
+   lastMouseY = y;
+
+   if (button == GLUT_LEFT_BUTTON)
    {
-      lastMouseX = x;
-      lastMouseY = y;
+      if (state == GLUT_UP)
+      {
+         if (showBlockHighlight)
+         {
+            world.placeBlock(previewBlockPos, BlockType::PLANKS);
+            showBlockHighlight = false;
+         }
+      }
    }
+   else if (button == GLUT_RIGHT_BUTTON)
+   {
+      if (state == GLUT_UP)
+      {
+         if (showBlockHighlight)
+         {
+            world.placeBlock(highlightedBlockPos, BlockType::AIR);
+            showBlockHighlight = false;
+         }
+      }
+   }
+
+   glutPostRedisplay();
 }
 
 void mouseMotion(int x, int y)
@@ -1123,4 +1201,61 @@ void resetMousePosition()
    glutWarpPointer(centerX, centerY); // Sposta il cursore al centro
    lastMouseX = centerX;
    lastMouseY = centerY;
+}
+
+void updateBlockHighlight()
+{
+   // Calcola la direzione di vista della telecamera
+   float cosPitch = cos(toRadians(camera.rot.xRot));
+   float sinPitch = sin(toRadians(camera.rot.xRot));
+   float cosYaw = cos(toRadians(camera.rot.yRot));
+   float sinYaw = sin(toRadians(camera.rot.yRot));
+   Point3D viewDir(cosPitch * cosYaw, sinPitch, cosPitch * sinYaw);
+
+   const float step = 0.1f;
+   const float maxDistance = 3.0f;
+   bool foundSurface = false;
+   Point3D lastAirPos = camera.pos;
+
+   for (float t = step; t <= maxDistance; t += step)
+   {
+      Point3D currentPos = camera.pos + viewDir * t;
+      int blockX = static_cast<int>(std::round(currentPos.x));
+      int blockY = static_cast<int>(std::round(currentPos.y));
+      int blockZ = static_cast<int>(std::round(currentPos.z));
+
+      // Calcola le coordinate del chunk
+      int chunkX = static_cast<int>(std::floor(blockX / static_cast<float>(CHUNK_SIZE)));
+      int chunkZ = static_cast<int>(std::floor(blockZ / static_cast<float>(CHUNK_SIZE)));
+      Point2D chunkCoords(chunkX, chunkZ);
+      auto it = world.chunksMap.find(chunkCoords);
+      if (it == world.chunksMap.end())
+         continue;
+
+      // Calcola le coordinate locali nel chunk
+      int localX = blockX - chunkX * CHUNK_SIZE;
+      int localZ = blockZ - chunkZ * CHUNK_SIZE;
+      int localY = blockY;
+
+      if (localX < 0 || localX >= CHUNK_SIZE ||
+          localZ < 0 || localZ >= CHUNK_SIZE ||
+          localY < 0 || localY >= CHUNK_HEIGHT)
+      {
+         continue;
+      }
+
+      // Se troviamo un blocco non vuoto, salviamo la posizione per l'evidenziazione
+      if (it->second.blocks[localX][localZ][localY].type != BlockType::AIR)
+      {
+         foundSurface = true;
+         highlightedBlockPos = Point3D(blockX, blockY, blockZ);
+         previewBlockPos = lastAirPos;
+         break;
+      }
+      else
+      {
+         lastAirPos = currentPos;
+      }
+   }
+   showBlockHighlight = foundSurface;
 }
