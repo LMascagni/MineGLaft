@@ -1213,7 +1213,7 @@ void updateBlockHighlight()
    Point3D viewDir(cosPitch * cosYaw, sinPitch, cosPitch * sinYaw);
 
    const float step = 0.1f;
-   const float maxDistance = 3.0f;
+   const float maxDistance = 5.0f;
    bool foundSurface = false;
    Point3D lastAirPos = camera.pos;
 
