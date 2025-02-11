@@ -28,7 +28,7 @@
 // ================================
 const int CHUNK_SIZE = 16;
 const int CHUNK_HEIGHT = 256;
-const int RENDER_DISTANCE = 32;
+const int RENDER_DISTANCE = 128;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -247,8 +247,8 @@ class Chunk;
 // Enumerazione globale per i tipi di blocco
 enum class BlockType
 {
-   TEST,        // 01
-   AIR,         // 00
+   TEST,        // 00
+   AIR,         // 01
    GRASS,       // 02
    DIRT,        // 03
    STONE,       // 04
@@ -259,7 +259,9 @@ enum class BlockType
    LEAVES,      // 09
    PLANKS,      // 10
    COBBLESTONE, // 11
-   BRICKS       // 12
+   BRICKS,      // 12
+
+   BLOCK_COUNT
 
 };
 
@@ -306,12 +308,12 @@ public:
    {
       // Parametri esistenti
       float baseFrequency = 0.01f;
-      int baseHeight = 85;
-      int amplitude = 150;
-      int octaves = 4;
+      int baseHeight = 128;
+      int amplitude = 200;
+      int octaves = 5;
       float persistence = 0.5f;
       float biomeFrequency = 0.001f;
-      const int WATER_LEVEL = 70;
+      const int WATER_LEVEL = 110;
       const int BEACH_RANGE = 2; // Range di altezza per la spiaggia sopra il livello dell'acqua
 
       // Nuovo parametro per il rumore della sabbia
@@ -758,6 +760,26 @@ public:
    static void drawText(const std::string &text, Point2D pos, void *font = GLUT_BITMAP_HELVETICA_10);
 };
 
+// Aggiungi questa funzione insieme alle altre funzioni helper
+std::string blockTypeToString(BlockType type) {
+    switch (type) {
+        case BlockType::TEST:        return "Test";
+        case BlockType::AIR:         return "Air";
+        case BlockType::GRASS:       return "Grass";
+        case BlockType::DIRT:        return "Dirt";
+        case BlockType::STONE:       return "Stone";
+        case BlockType::SAND:        return "Sand";
+        case BlockType::WATER:       return "Water";
+        case BlockType::BEDROCK:     return "Bedrock";
+        case BlockType::WOOD:        return "Wood";
+        case BlockType::LEAVES:      return "Leaves";
+        case BlockType::PLANKS:      return "Planks";
+        case BlockType::COBBLESTONE: return "Cobblestone";
+        case BlockType::BRICKS:      return "Bricks";
+        default:                     return "Unknown";
+    }
+}
+
 // ================================
 // PROTOTIPI DELLE FUNZIONI
 // ================================
@@ -770,7 +792,8 @@ void display();
 void keyboard(unsigned char key, int x, int y);
 void mouseMotion(int x, int y);
 void resetMousePosition();
-void processMouse(int button, int state, int x, int y); // Prototipo aggiunto
+void processMouse(int button, int state, int x, int y);
+void mouseFunc(int button, int state, int x, int y);
 
 void updateBlockHighlight();
 
@@ -830,6 +853,8 @@ bool showBlockHighlight = false; // Variabile globale per l'evidenziazione del b
 Point3D highlightedBlockPos;     // Posizione del blocco evidenziato
 Point3D previewBlockPos;
 
+BlockType selectedBlockType = BlockType::GRASS; // Tipo di blocco selezionato
+
 // ================================
 // FUNZIONE PRINCIPALE
 // ================================
@@ -858,6 +883,7 @@ int main(int argc, char **argv)
    glutMouseFunc(processMouse);
    glutMotionFunc(mouseMotion);
    glutPassiveMotionFunc(mouseMotion);
+   glutMouseFunc(mouseFunc);
 
    // Avvia il ciclo principale di GLUT
    glutMainLoop();
@@ -957,7 +983,7 @@ void display()
 
    glMatrixMode(GL_PROJECTION);
    glLoadIdentity();
-   gluPerspective(45.0f, 1.0f * glutGet(GLUT_WINDOW_WIDTH) / glutGet(GLUT_WINDOW_HEIGHT), 0.1f, 1000.0f);
+   gluPerspective(45.0f, 1.0f * glutGet(GLUT_WINDOW_WIDTH) / glutGet(GLUT_WINDOW_HEIGHT), 0.1f, 10000.0f);
 
    glMatrixMode(GL_MODELVIEW);
    glLoadIdentity();
@@ -1107,10 +1133,10 @@ void display()
 
       // Disegna il rettangolo
       glBegin(GL_QUADS);
-      glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT) - 80);   // Alto sinistro
+      glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT) - 100);   // Alto sinistro
       glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT));        // Basso sinistro
       glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT));      // Basso destro
-      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT) - 80); // Alto destro
+      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT) - 100); // Alto destro
       glEnd();
 
       // Riabilita lo Z-buffer dopo aver disegnato il rettangolo
@@ -1129,6 +1155,7 @@ void display()
       Point2D chunkCoords = world.getChunkCoordinates(camera.pos);
       UIRenderer::drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + "," + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
       UIRenderer::drawText("Seed: " + std::to_string(world.generationSeed), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 75));
+      UIRenderer::drawText("Blocco selezionato: " + blockTypeToString(selectedBlockType) + "(" + std::to_string(static_cast<int>(selectedBlockType)) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 90));
 
       // Ripristina le impostazioni OpenGL
       glPopMatrix();
@@ -1175,7 +1202,6 @@ void display()
    glutSwapBuffers();
 }
 
-// Modifica in keyboard(): rimuovi (o commenta) il caso 'v' per evitare che si possano riattivare ombre
 void keyboard(unsigned char key, int, int)
 {
    float horizontalStep;
@@ -1209,7 +1235,6 @@ void keyboard(unsigned char key, int, int)
          glutSetCursor(GLUT_CURSOR_LEFT_ARROW);
       }
       break;
-   // ... gli altri casi rimangono invariati ...
    case 'q':
    case 'Q':
       wireframeMode = !wireframeMode;
@@ -1264,12 +1289,6 @@ void keyboard(unsigned char key, int, int)
    case 'n':
       showData = !showData;
       break;
-   case 'p':
-      world.placeBlock(camera.pos, BlockType::COBBLESTONE);
-      break;
-   case 'o':
-      world.placeBlock(camera.pos, BlockType::AIR);
-      break;
    }
 
    if (moved)
@@ -1291,7 +1310,7 @@ void processMouse(int button, int state, int x, int y)
       {
          if (showBlockHighlight)
          {
-            world.placeBlock(previewBlockPos, BlockType::PLANKS);
+            world.placeBlock(previewBlockPos, selectedBlockType);
             showBlockHighlight = false;
          }
       }
@@ -1343,6 +1362,26 @@ void resetMousePosition()
    glutWarpPointer(centerX, centerY); // Sposta il cursore al centro
    lastMouseX = centerX;
    lastMouseY = centerY;
+}
+
+void mouseFunc(int button, int state, int x, int y)
+{
+   if (state == GLUT_UP) {
+       if (button == 3) { // Mouse wheel up
+           // Blocco successivo
+           int currentType = static_cast<int>(selectedBlockType);
+           currentType = (currentType + 1) % static_cast<int>(BlockType::BLOCK_COUNT);
+           selectedBlockType = static_cast<BlockType>(currentType);
+       }
+       else if (button == 4) { // Mouse wheel down
+           // Blocco precedente
+           int currentType = static_cast<int>(selectedBlockType);
+           currentType = (currentType - 1 + static_cast<int>(BlockType::BLOCK_COUNT)) % static_cast<int>(BlockType::BLOCK_COUNT);
+           selectedBlockType = static_cast<BlockType>(currentType);
+       }
+   }
+   // Gestisci gli altri pulsanti del mouse
+   processMouse(button, state, x, y);
 }
 
 void updateBlockHighlight()
