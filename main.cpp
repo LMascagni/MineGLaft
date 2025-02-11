@@ -883,7 +883,7 @@ void init()
    camera.reset();
    // std::cout << "Inserisci il seme per la generazione del mondo: ";
    // std::cin >> world.generationSeed; // Chiede all'utente di inserire il seme per il Per
-   world.generationSeed = 12345; // Seme per PerlinNoise
+   world.generationSeed = 1; // Seme per PerlinNoise
 
    // Genera una griglia 5x5 di chunk
    PerlinNoise noise(world.generationSeed);
