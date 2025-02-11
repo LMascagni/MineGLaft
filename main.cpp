@@ -1,6 +1,7 @@
 // ================================
 // LIBRERIE
 // ================================
+#include <GL/glew.h>
 #include <GL/glut.h>
 #include <cmath>
 #include <vector>
@@ -27,7 +28,7 @@
 // ================================
 const int CHUNK_SIZE = 16;
 const int CHUNK_HEIGHT = 256;
-const int RENDER_DISTANCE = 20;
+const int RENDER_DISTANCE = 32;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -284,6 +285,10 @@ public:
    // All'interno della classe Chunk, aggiungi il membro per le coordinate texture:
    std::vector<float> meshTexCoords;
 
+   // Aggiungi i buffer OpenGL
+   GLuint vao = 0;
+   GLuint vbo = 0;
+
    // Costruttore di default
    Chunk() : pos(0, 0)
    {
@@ -490,23 +495,71 @@ public:
             }
          }
       }
+
+      // Ora prepara i dati interlacciati (x,y,z,u,v)
+      std::vector<float> interleaved;
+      size_t numVertices = meshVertices.size() / 3;
+      for (size_t i = 0; i < numVertices; i++)
+      {
+         interleaved.push_back(meshVertices[i * 3 + 0]);
+         interleaved.push_back(meshVertices[i * 3 + 1]);
+         interleaved.push_back(meshVertices[i * 3 + 2]);
+         interleaved.push_back(meshTexCoords[i * 2 + 0]);
+         interleaved.push_back(meshTexCoords[i * 2 + 1]);
+      }
+
+      // Genera/aggiorna VAO e VBO
+      if (vao == 0)
+      {
+         glGenVertexArrays(1, &vao);
+      }
+      glBindVertexArray(vao);
+
+      if (vbo == 0)
+      {
+         glGenBuffers(1, &vbo);
+      }
+      glBindBuffer(GL_ARRAY_BUFFER, vbo);
+      glBufferData(GL_ARRAY_BUFFER, interleaved.size() * sizeof(float), interleaved.data(), GL_STATIC_DRAW);
+
+      // Abilita e definisci l'attributo per la posizione (location 0)
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+      // Abilita e definisci l'attributo per le coordinate texture (location 1)
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+
+      // Unbind
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      glBindVertexArray(0);
    }
 
    // Modifica il metodo drawTextured() della classe Chunk per utilizzare anche le coordinate texture:
    void drawTextured() const
    {
+      if (vao == 0)
+         return; // Nessun dato caricato
+
       glBindTexture(GL_TEXTURE_2D, blockTexture);
-      glPushMatrix();
-      // Rimuovi la traslazione poiché le coordinate dei blocchi sono già globali
-      // glTranslatef(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE);
-      glBegin(GL_QUADS);
-      for (size_t i = 0, j = 0; i < meshVertices.size(); i += 3, j += 2)
-      {
-         glTexCoord2f(meshTexCoords[j], meshTexCoords[j + 1]);
-         glVertex3f(meshVertices[i], meshVertices[i + 1], meshVertices[i + 2]);
-      }
-      glEnd();
-      glPopMatrix();
+      glBindVertexArray(vao);
+      // Considerando che ogni quadrilatero è formato da 4 vertici,
+      // il numero totale di vertici è:
+      int totalVertices = static_cast<int>(meshVertices.size() / 3);
+
+      glBindVertexArray(0); // Disabilita momentaneamente il VAO
+
+      glEnableClientState(GL_VERTEX_ARRAY);
+      glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+      glBindBuffer(GL_ARRAY_BUFFER, vbo);
+      glVertexPointer(3, GL_FLOAT, 5 * sizeof(float), (void *)0);
+      glTexCoordPointer(2, GL_FLOAT, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+
+      glDrawArrays(GL_QUADS, 0, totalVertices);
+
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+      glDisableClientState(GL_VERTEX_ARRAY);
    }
 };
 
@@ -579,8 +632,6 @@ void World::placeBlock(const Point3D &pos, BlockType type)
    auto it = chunksMap.find(chunkCoords);
    if (it == chunksMap.end())
    {
-      std::cout << "No chunk found at chunk (" << chunkCoords.x << ", " << chunkCoords.z
-                << ") for block position (" << blockX << ", " << blockY << ", " << blockZ << ")." << std::endl;
       return;
    }
 
@@ -594,7 +645,6 @@ void World::placeBlock(const Point3D &pos, BlockType type)
        localZ < 0 || localZ >= CHUNK_SIZE ||
        localY < 0 || localY >= CHUNK_HEIGHT)
    {
-      std::cout << "Block position (" << blockX << ", " << blockY << ", " << blockZ << ") is out of chunk bounds." << std::endl;
       return;
    }
 
@@ -698,6 +748,7 @@ bool showTopFace = true;
 bool enableFaceOptimization = true;
 bool wireframeMode = false;         // Variabile globale per la modalità wireframe
 bool enableShadows = false;         // Aggiungi una variabile globale per le ombre
+bool enableFatsMode = false;        // Variabile globale per la modalità Fats
 int lastMouseX = 0, lastMouseY = 0; // Variabili globali per tracciare la posizione precedente del mouse
 // Variabili globali per il calcolo degli FPS
 std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
@@ -718,6 +769,13 @@ int main(int argc, char **argv)
    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
    glutInitWindowSize(1200, 1000);
    glutCreateWindow("MineGLaft");
+
+   GLenum err = glewInit();
+   if (err != GLEW_OK)
+   {
+      std::cerr << "GLEW failed to initialize: " << glewGetErrorString(err) << std::endl;
+      return EXIT_FAILURE;
+   }
 
    // Inizializza il programma
    init();
@@ -759,7 +817,7 @@ void init()
 
    // Genera una griglia 5x5 di chunk
    PerlinNoise noise(world.generationSeed);
-   world.generateChunkGrid(5, noise);
+   world.generateChunkGrid(32, noise);
 }
 
 void Camera::reset()
@@ -1050,8 +1108,19 @@ void display()
 // Modifica in keyboard(): rimuovi (o commenta) il caso 'v' per evitare che si possano riattivare ombre
 void keyboard(unsigned char key, int, int)
 {
-   float horizontalStep = 0.5f;
-   float verticalStep = 1.0f;
+   float horizontalStep;
+   float verticalStep;
+
+   if (enableFatsMode)
+   {
+      horizontalStep = 16.0f;
+      verticalStep = 16.0f;
+   }
+   else
+   {
+      horizontalStep = 0.5f;
+      verticalStep = 1.0f;
+   }
    bool moved = false;
 
    switch (key)
@@ -1083,6 +1152,9 @@ void keyboard(unsigned char key, int, int)
          glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
       }
       glutPostRedisplay();
+      break;
+   case 'e':
+      enableFatsMode = !enableFatsMode;
       break;
    case 'w':
       camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
