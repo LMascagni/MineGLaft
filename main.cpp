@@ -301,14 +301,21 @@ public:
       blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT, Block())));
    }
 
-   // Genera il chunk di test: per ogni coordinata (x, z), calcola un'altezza in base al PerlinNoise;
-   // i blocchi sotto quella altezza saranno di tipo TEST, quelli sopra rimangono AIR.
+   // Funzione per generare il terreno del chunk
    void generate(const PerlinNoise &noise)
    {
-      // Parametri per una generazione in stile Minecraft
-      float frequency = 0.01f;
-      int baseHeight = 80;
-      int amplitude = 40; // Variazione di altezza (+/- 20)
+      // Parametri esistenti
+      float baseFrequency = 0.01f;
+      int baseHeight = 85;
+      int amplitude = 150;
+      int octaves = 4;
+      float persistence = 0.5f;
+      float biomeFrequency = 0.001f;
+      const int WATER_LEVEL = 70;
+      const int BEACH_RANGE = 2; // Range di altezza per la spiaggia sopra il livello dell'acqua
+
+      // Nuovo parametro per il rumore della sabbia
+      float sandNoiseFrequency = 0.05f; // Frequenza più alta per variazioni più piccole
 
       for (int x = 0; x < CHUNK_SIZE; x++)
       {
@@ -316,40 +323,103 @@ public:
          {
             int globalX = static_cast<int>(pos.x * CHUNK_SIZE) + x;
             int globalZ = static_cast<int>(pos.z * CHUNK_SIZE) + z;
-            float n = noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency);
-            int surfaceHeight = baseHeight + static_cast<int>(n * amplitude);
 
-            // Limita l'altezza superficiale per evitare valori fuori range
+            float biomeValue = noise.getNoise(globalX * biomeFrequency, 0.0f, globalZ * biomeFrequency);
+            biomeValue = (biomeValue + 1.0f) / 2.0f;
+
+            int localBaseHeight = static_cast<int>(baseHeight * (0.7f + 0.3f * biomeValue));
+            int localAmplitude = static_cast<int>(amplitude * (0.1f + 0.9f * biomeValue));
+
+            float totalNoise = 0.0f;
+            float maxAmplitude = 0.0f;
+            float frequency = baseFrequency;
+            float amplitudeLayer = 1.0f;
+
+            for (int i = 0; i < octaves; ++i)
+            {
+               totalNoise += noise.getNoise(globalX * frequency, 0.0f, globalZ * frequency) * amplitudeLayer;
+               maxAmplitude += amplitudeLayer;
+               amplitudeLayer *= persistence;
+               frequency *= 2.0f;
+            }
+
+            totalNoise /= maxAmplitude;
+            int surfaceHeight = localBaseHeight + static_cast<int>(totalNoise * localAmplitude);
+
             if (surfaceHeight < 5)
                surfaceHeight = 5;
             if (surfaceHeight >= CHUNK_HEIGHT)
                surfaceHeight = CHUNK_HEIGHT - 1;
 
+            // Calcola il rumore per la distribuzione della sabbia
+            float sandNoise = noise.getNoise(globalX * sandNoiseFrequency, 0.0f, globalZ * sandNoiseFrequency);
+            sandNoise = (sandNoise + 1.0f) / 2.0f; // Normalizza a [0,1]
+
             for (int y = 0; y < CHUNK_HEIGHT; y++)
             {
                if (y > surfaceHeight)
                {
-                  // Spazio libero sopra il terreno
-                  blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
+                  // Se siamo sopra il terreno ma sotto il livello dell'acqua, metti acqua
+                  if (y <= WATER_LEVEL)
+                  {
+                     blocks[x][z][y] = Block(BlockType::WATER, Point3D(globalX, y, globalZ));
+                  }
+                  else
+                  {
+                     blocks[x][z][y] = Block(BlockType::AIR, Point3D(globalX, y, globalZ));
+                  }
                }
                else if (y == surfaceHeight)
                {
-                  // Primo blocco della superficie: GRASS
-                  blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+                  // Se siamo al livello della superficie
+                  if (y <= WATER_LEVEL + BEACH_RANGE && y >= WATER_LEVEL - BEACH_RANGE)
+                  {
+                     // Usa il sandNoise per decidere se mettere sabbia o erba
+                     if (sandNoise > 0.4f) // Regola questa soglia per più o meno sabbia
+                     {
+                        blocks[x][z][y] = Block(BlockType::SAND, Point3D(globalX, y, globalZ));
+                     }
+                     else
+                     {
+                        // Se siamo sotto il livello dell'acqua, mettiamo terra invece che erba
+                        if (y < WATER_LEVEL)
+                        {
+                           blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+                        }
+                        else
+                        {
+                           blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+                        }
+                     }
+                  }
+                  else if (y < WATER_LEVEL)
+                  {
+                     // Sotto il livello dell'acqua, usa sempre sabbia
+                     blocks[x][z][y] = Block(BlockType::SAND, Point3D(globalX, y, globalZ));
+                  }
+                  else
+                  {
+                     blocks[x][z][y] = Block(BlockType::GRASS, Point3D(globalX, y, globalZ));
+                  }
                }
                else if (y >= surfaceHeight - 3)
                {
-                  // Strati immediatamente sotto la superficie: DIRT
-                  blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+                  // Anche per gli strati sotto la superficie, usa il noise per decidere
+                  if (surfaceHeight <= WATER_LEVEL + BEACH_RANGE && sandNoise > 0.4f)
+                  {
+                     blocks[x][z][y] = Block(BlockType::SAND, Point3D(globalX, y, globalZ));
+                  }
+                  else
+                  {
+                     blocks[x][z][y] = Block(BlockType::DIRT, Point3D(globalX, y, globalZ));
+                  }
                }
                else if (y < 5)
                {
-                  // Strati bassi: BEDROCK fissa fino al livello 4
                   blocks[x][z][y] = Block(BlockType::BEDROCK, Point3D(globalX, y, globalZ));
                }
                else
                {
-                  // Il resto del sottosuolo: STONE
                   blocks[x][z][y] = Block(BlockType::STONE, Point3D(globalX, y, globalZ));
                }
             }
@@ -887,7 +957,7 @@ void display()
 
    glMatrixMode(GL_PROJECTION);
    glLoadIdentity();
-   gluPerspective(45.0f, 1.0f * glutGet(GLUT_WINDOW_WIDTH) / glutGet(GLUT_WINDOW_HEIGHT), 0.1f, 500.0f);
+   gluPerspective(45.0f, 1.0f * glutGet(GLUT_WINDOW_WIDTH) / glutGet(GLUT_WINDOW_HEIGHT), 0.1f, 1000.0f);
 
    glMatrixMode(GL_MODELVIEW);
    glLoadIdentity();
