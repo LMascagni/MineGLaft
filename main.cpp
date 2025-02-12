@@ -13,6 +13,10 @@
 #include <string>
 #include <chrono>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+namespace fs = std::filesystem;
 
 // Aggiungi subito dopo gli include per definire GL_CLAMP_TO_EDGE se non definito
 #ifndef GL_CLAMP_TO_EDGE
@@ -28,7 +32,7 @@
 // ================================
 const int CHUNK_SIZE = 16;
 const int CHUNK_HEIGHT = 256;
-const int RENDER_DISTANCE = 128;
+const int RENDER_DISTANCE = 32;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -237,8 +241,20 @@ public:
    Camera(Point3D initialPos = Point3D(0.0f, 0.0f, 0.0f), Rotation initialRot = Rotation(0.0f, 0.0f, 0.0f))
        : pos(initialPos), rot(initialRot) {}
 
-   void reset();
-   bool isFaceVisible(const Point3D &blockPos, const Point3D &faceNormalVect) const;
+   void reset()
+   {
+      pos = Point3D(0, 125, 0);
+      rot = Rotation(-30.0f, 45.0f, 0.0f);
+      glutPostRedisplay();
+   }
+
+   bool isFaceVisible(const Point3D &blockPos, const Point3D &faceNormalVect) const
+   {
+      Point3D directionVect(blockPos.x - pos.x, blockPos.y - pos.y, blockPos.z - pos.z);
+      directionVect.normalize();
+      float dotProduct = directionVect.x * faceNormalVect.x + directionVect.y * faceNormalVect.y + directionVect.z * faceNormalVect.z;
+      return dotProduct < 0.0f;
+   }
 };
 
 // Dichiarazione anticipata della classe Chunk
@@ -655,6 +671,7 @@ public:
    std::unordered_map<Point2D, Chunk> chunksMap;
    int generationSeed;
    Point3D spawnPoint;
+   std::string currentWorldName; // Add this as a class member
 
    // Determina le coordinate del chunk in cui cade un punto nel mondo
    Point2D getChunkCoordinates(const Point3D &pos) const
@@ -681,12 +698,122 @@ public:
             chunk.generate(noise);
             chunk.generateMesh();
             chunksMap[chunkPos] = chunk;
+            saveChunk(chunkPos, chunk); // Save the chunk immediately after generation
          }
       }
    }
 
    // New function prototype:
    void placeBlock(const Point3D &pos, BlockType type);
+   void initializeWorld(const std::string &worldName)
+   {
+      currentWorldName = worldName;
+      fs::path worldPath = fs::path("worlds") / worldName;
+      fs::create_directories(worldPath);
+      fs::create_directories(worldPath / "chunks");
+
+      // Save initial world info
+      saveWorldInfo();
+   }
+
+   void saveWorldInfo()
+   {
+      if (currentWorldName.empty())
+         return;
+
+      fs::path worldPath = fs::path("worlds") / currentWorldName;
+      std::ofstream worldInfo(worldPath / "world.info");
+      worldInfo << "seed " << generationSeed << "\n";
+      worldInfo.close();
+   }
+
+   void saveChunk(const Point2D &pos, const Chunk &chunk)
+   {
+      if (currentWorldName.empty())
+         return;
+
+      fs::path worldPath = fs::path("worlds") / currentWorldName;
+      std::stringstream chunkFileName;
+      chunkFileName << "chunk_" << pos.x << "_" << pos.z << ".dat";
+
+      std::ofstream chunkFile(worldPath / "chunks" / chunkFileName.str(), std::ios::binary);
+
+      // Save chunk data
+      for (int x = 0; x < CHUNK_SIZE; x++)
+      {
+         for (int z = 0; z < CHUNK_SIZE; z++)
+         {
+            for (int y = 0; y < CHUNK_HEIGHT; y++)
+            {
+               int blockType = static_cast<int>(chunk.blocks[x][z][y].type);
+               chunkFile.write(reinterpret_cast<char *>(&blockType), sizeof(int));
+            }
+         }
+      }
+      chunkFile.close();
+   }
+
+   // Add this new method to the World class
+   bool loadWorld(const std::string &worldName)
+   {
+      fs::path worldPath = fs::path("worlds") / worldName;
+      if (!fs::exists(worldPath))
+      {
+         std::cerr << "World '" << worldName << "' does not exist." << std::endl;
+         return false;
+      }
+
+      // Load world info
+      std::ifstream worldInfo(worldPath / "world.info");
+      std::string token;
+      worldInfo >> token >> generationSeed;
+      worldInfo.close();
+
+      currentWorldName = worldName;
+
+      // Clear existing chunks
+      chunksMap.clear();
+
+      // Load all chunks from the chunks directory
+      fs::path chunksPath = worldPath / "chunks";
+      for (const auto &entry : fs::directory_iterator(chunksPath))
+      {
+         if (entry.path().extension() == ".dat")
+         {
+            std::string filename = entry.path().filename().string();
+            int x, z;
+            if (sscanf(filename.c_str(), "chunk_%d_%d.dat", &x, &z) == 2)
+            {
+               Point2D chunkPos(x, z);
+               Chunk chunk(chunkPos);
+
+               std::ifstream chunkFile(entry.path(), std::ios::binary);
+               for (int x = 0; x < CHUNK_SIZE; x++)
+               {
+                  for (int z = 0; z < CHUNK_SIZE; z++)
+                  {
+                     for (int y = 0; y < CHUNK_HEIGHT; y++)
+                     {
+                        int blockType;
+                        chunkFile.read(reinterpret_cast<char *>(&blockType), sizeof(int));
+                        chunk.blocks[x][z][y].type = static_cast<BlockType>(blockType);
+                        chunk.blocks[x][z][y].pos = Point3D(
+                            chunkPos.x * CHUNK_SIZE + x,
+                            y,
+                            chunkPos.z * CHUNK_SIZE + z);
+                     }
+                  }
+               }
+               chunk.generateMesh();
+               chunksMap[chunkPos] = chunk;
+               std::cout << "Chunk " << x << ", " << z << " caricato." << std::endl;
+            }
+         }
+      }
+
+      std::cout << "Sono stati caricati " << chunksMap.size() << " chunks da '" << worldName << "'" << std::endl;
+      return true;
+   }
 };
 
 void World::placeBlock(const Point3D &pos, BlockType type)
@@ -723,6 +850,7 @@ void World::placeBlock(const Point3D &pos, BlockType type)
    // Aggiorna il blocco nel chunk corrente.
    it->second.blocks[localX][localZ][localY] = Block(type, Point3D(blockX, blockY, blockZ));
    it->second.generateMesh();
+   saveChunk(chunkCoords, it->second); // Save the chunk after modification
 
    // Aggiorna la mesh dei chunk adiacenti se il blocco tocca il bordo.
    int directions[6][3] = {
@@ -757,27 +885,56 @@ void World::placeBlock(const Point3D &pos, BlockType type)
 class UIRenderer
 {
 public:
-   static void drawText(const std::string &text, Point2D pos, void *font = GLUT_BITMAP_HELVETICA_10);
+   void drawText(const std::string &text, Point2D pos, void *font)
+   {
+      glDisable(GL_TEXTURE_2D); // Disabilita il texturing per evitare che colori e texture influenzino il testo
+      glDisable(GL_LIGHTING);
+      glColor3f(1.0f, 1.0f, 1.0f); // Forza il colore bianco
+
+      glRasterPos2f(pos.x, pos.z);
+      for (char c : text)
+      {
+         glutBitmapCharacter(font, c);
+      }
+      glEnable(GL_TEXTURE_2D); // Riabilita il texturing
+      glEnable(GL_LIGHTING);
+   }
 };
 
 // Aggiungi questa funzione insieme alle altre funzioni helper
-std::string blockTypeToString(BlockType type) {
-    switch (type) {
-        case BlockType::TEST:        return "Test";
-        case BlockType::AIR:         return "Air";
-        case BlockType::GRASS:       return "Grass";
-        case BlockType::DIRT:        return "Dirt";
-        case BlockType::STONE:       return "Stone";
-        case BlockType::SAND:        return "Sand";
-        case BlockType::WATER:       return "Water";
-        case BlockType::BEDROCK:     return "Bedrock";
-        case BlockType::WOOD:        return "Wood";
-        case BlockType::LEAVES:      return "Leaves";
-        case BlockType::PLANKS:      return "Planks";
-        case BlockType::COBBLESTONE: return "Cobblestone";
-        case BlockType::BRICKS:      return "Bricks";
-        default:                     return "Unknown";
-    }
+std::string blockTypeToString(BlockType type)
+{
+   switch (type)
+   {
+   case BlockType::TEST:
+      return "Test";
+   case BlockType::AIR:
+      return "Air";
+   case BlockType::GRASS:
+      return "Grass";
+   case BlockType::DIRT:
+      return "Dirt";
+   case BlockType::STONE:
+      return "Stone";
+   case BlockType::SAND:
+      return "Sand";
+   case BlockType::WATER:
+      return "Water";
+   case BlockType::BEDROCK:
+      return "Bedrock";
+   case BlockType::WOOD:
+      return "Wood";
+   case BlockType::LEAVES:
+      return "Leaves";
+   case BlockType::PLANKS:
+      return "Planks";
+   case BlockType::COBBLESTONE:
+      return "Cobblestone";
+   case BlockType::BRICKS:
+      return "Bricks";
+   default:
+      return "Unknown";
+   }
 }
 
 // ================================
@@ -835,6 +992,7 @@ void loadTextures()
 // ================================
 Camera camera;
 World world; // Dichiarazione della variabile globale
+UIRenderer ui;
 bool showChunkBorder = false;
 bool showData = true;
 bool showTopFace = true;
@@ -860,6 +1018,39 @@ BlockType selectedBlockType = BlockType::GRASS; // Tipo di blocco selezionato
 // ================================
 int main(int argc, char **argv)
 {
+   int seed = 1;                            // Default seed value
+   std::string worldName = "default_world"; // Default world name
+   bool loadExisting = false;
+
+   // Process command line arguments
+   for (int i = 1; i < argc; i++)
+   {
+      std::string arg = argv[i];
+      if (arg == "--seed" && i + 1 < argc)
+      {
+         try
+         {
+            seed = std::stoi(argv[i + 1]);
+            i++; // Skip next argument
+         }
+         catch (const std::exception &)
+         {
+            std::cerr << "Invalid seed value. Using default seed (1)." << std::endl;
+         }
+      }
+      else if (arg == "--world" && i + 1 < argc)
+      {
+         worldName = argv[i + 1];
+         i++; // Skip next argument
+      }
+      else if (arg == "--open" && i + 1 < argc)
+      {
+         worldName = argv[i + 1];
+         loadExisting = true;
+         i++; // Skip next argument
+      }
+   }
+
    glutInit(&argc, argv);
    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
    glutInitWindowSize(1200, 1000);
@@ -872,12 +1063,36 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
    }
 
-   // Inizializza il programma
-   init();
+   // Initialize OpenGL settings
+   glEnable(GL_DEPTH_TEST);
+   glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
+   glDisable(GL_LIGHTING);
+   glEnable(GL_TEXTURE_2D);
+   loadTextures();
+   camera.reset();
 
+   if (loadExisting)
+   {
+      // Try to load existing world
+      if (!world.loadWorld(worldName))
+      {
+         std::cerr << "Failed to load world. Exiting." << std::endl;
+         return EXIT_FAILURE;
+      }
+   }
+   else
+   {
+      // Generate new world
+      world.generationSeed = seed;
+      world.initializeWorld(worldName);
+      PerlinNoise noise(world.generationSeed);
+      world.generateChunkGrid(32, noise);
+   }
+
+   // Rest of initialization
    checkWorldIntegrity();
 
-   // Registra le funzioni di callback
+   // Register callbacks
    glutDisplayFunc(display);
    glutKeyboardFunc(keyboard);
    glutMouseFunc(processMouse);
@@ -885,7 +1100,6 @@ int main(int argc, char **argv)
    glutPassiveMotionFunc(mouseMotion);
    glutMouseFunc(mouseFunc);
 
-   // Avvia il ciclo principale di GLUT
    glutMainLoop();
    return 0;
 }
@@ -894,62 +1108,31 @@ int main(int argc, char **argv)
 // IMPLEMENTAZIONE DELLE FUNZIONI
 // ================================
 
-// Modifica in init(): carica le textures e abilita il texturing
+/*
 void init()
 {
+   std::cout << "Inizializzazione..." << std::endl;
+
    glEnable(GL_DEPTH_TEST);
    glClearColor(0.0f, 1.0f, 1.0f, 1.0f);
-
-   // Disabilitiamo l'illuminazione
    glDisable(GL_LIGHTING);
-   // Abilitiamo il texturing 2D
    glEnable(GL_TEXTURE_2D);
+
    loadTextures();
 
    camera.reset();
-   // std::cout << "Inserisci il seme per la generazione del mondo: ";
-   // std::cin >> world.generationSeed; // Chiede all'utente di inserire il seme per il Per
-   world.generationSeed = 1; // Seme per PerlinNoise
 
-   // Genera una griglia 5x5 di chunk
    PerlinNoise noise(world.generationSeed);
    world.generateChunkGrid(32, noise);
-}
 
-void Camera::reset()
-{
-   pos = Point3D(0, 80, 0);
-   rot = Rotation(-30.0f, 45.0f, 0.0f);
-   glutPostRedisplay();
+   std::cout << "Inizializzazione completata." << std::endl;
 }
-
-bool Camera::isFaceVisible(const Point3D &blockPos, const Point3D &faceNormalVect) const
-{
-   Point3D directionVect(blockPos.x - pos.x, blockPos.y - pos.y, blockPos.z - pos.z);
-   directionVect.normalize();
-   float dotProduct = directionVect.x * faceNormalVect.x + directionVect.y * faceNormalVect.y + directionVect.z * faceNormalVect.z;
-   return dotProduct < 0.0f;
-}
+*/
 
 // Funzione per convertire gradi in radianti
 float toRadians(float degrees)
 {
    return degrees * M_PI / 180.0f;
-}
-
-void UIRenderer::drawText(const std::string &text, Point2D pos, void *font)
-{
-   glDisable(GL_TEXTURE_2D); // Disabilita il texturing per evitare che colori e texture influenzino il testo
-   glDisable(GL_LIGHTING);
-   glColor3f(1.0f, 1.0f, 1.0f); // Forza il colore bianco
-
-   glRasterPos2f(pos.x, pos.z);
-   for (char c : text)
-   {
-      glutBitmapCharacter(font, c);
-   }
-   glEnable(GL_TEXTURE_2D); // Riabilita il texturing
-   glEnable(GL_LIGHTING);
 }
 
 // Modifica in display(): forza la disabilitazione dell'illuminazione e commenta il rendering delle ombre
@@ -1134,8 +1317,8 @@ void display()
       // Disegna il rettangolo
       glBegin(GL_QUADS);
       glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT) - 100);   // Alto sinistro
-      glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT));        // Basso sinistro
-      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT));      // Basso destro
+      glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT));         // Basso sinistro
+      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT));       // Basso destro
       glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT) - 100); // Alto destro
       glEnd();
 
@@ -1149,13 +1332,13 @@ void display()
       glColor3f(1.0f, 1.0f, 1.0f);
 
       // Disegna i testi sopra il rettangolo
-      UIRenderer::drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15));
-      UIRenderer::drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30));
-      UIRenderer::drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45));
+      ui.drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15), GLUT_BITMAP_HELVETICA_12);
+      ui.drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30), GLUT_BITMAP_HELVETICA_12);
+      ui.drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45), GLUT_BITMAP_HELVETICA_12);
       Point2D chunkCoords = world.getChunkCoordinates(camera.pos);
-      UIRenderer::drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + "," + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60));
-      UIRenderer::drawText("Seed: " + std::to_string(world.generationSeed), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 75));
-      UIRenderer::drawText("Blocco selezionato: " + blockTypeToString(selectedBlockType) + "(" + std::to_string(static_cast<int>(selectedBlockType)) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 90));
+      ui.drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + "," + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60), GLUT_BITMAP_HELVETICA_12);
+      ui.drawText("Seed: " + std::to_string(world.generationSeed), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 75), GLUT_BITMAP_HELVETICA_12);
+      ui.drawText("Blocco selezionato: " + blockTypeToString(selectedBlockType) + "(" + std::to_string(static_cast<int>(selectedBlockType)) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 90), GLUT_BITMAP_HELVETICA_12);
 
       // Ripristina le impostazioni OpenGL
       glPopMatrix();
@@ -1289,6 +1472,24 @@ void keyboard(unsigned char key, int, int)
    case 'n':
       showData = !showData;
       break;
+      /*
+         case 'o': // Save world
+            world.saveWorld("my_world", camera);
+            std::cout << "World saved!" << std::endl;
+            break;
+
+         case 'p': // Load world
+            if (world.loadWorld("my_world", camera))
+            {
+               std::cout << "World loaded!" << std::endl;
+            }
+            else
+            {
+               std::cout << "Failed to load world!" << std::endl;
+            }
+            glutPostRedisplay();
+            break;
+      */
    }
 
    if (moved)
@@ -1366,19 +1567,22 @@ void resetMousePosition()
 
 void mouseFunc(int button, int state, int x, int y)
 {
-   if (state == GLUT_UP) {
-       if (button == 3) { // Mouse wheel up
-           // Blocco successivo
-           int currentType = static_cast<int>(selectedBlockType);
-           currentType = (currentType + 1) % static_cast<int>(BlockType::BLOCK_COUNT);
-           selectedBlockType = static_cast<BlockType>(currentType);
-       }
-       else if (button == 4) { // Mouse wheel down
-           // Blocco precedente
-           int currentType = static_cast<int>(selectedBlockType);
-           currentType = (currentType - 1 + static_cast<int>(BlockType::BLOCK_COUNT)) % static_cast<int>(BlockType::BLOCK_COUNT);
-           selectedBlockType = static_cast<BlockType>(currentType);
-       }
+   if (state == GLUT_UP)
+   {
+      if (button == 3)
+      { // Mouse wheel up
+         // Blocco successivo
+         int currentType = static_cast<int>(selectedBlockType);
+         currentType = (currentType + 1) % static_cast<int>(BlockType::BLOCK_COUNT);
+         selectedBlockType = static_cast<BlockType>(currentType);
+      }
+      else if (button == 4)
+      { // Mouse wheel down
+         // Blocco precedente
+         int currentType = static_cast<int>(selectedBlockType);
+         currentType = (currentType - 1 + static_cast<int>(BlockType::BLOCK_COUNT)) % static_cast<int>(BlockType::BLOCK_COUNT);
+         selectedBlockType = static_cast<BlockType>(currentType);
+      }
    }
    // Gestisci gli altri pulsanti del mouse
    processMouse(button, state, x, y);
