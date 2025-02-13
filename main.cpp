@@ -668,6 +668,7 @@ namespace std
 class World
 {
 public:
+   Camera camera;
    std::unordered_map<Point2D, Chunk> chunksMap;
    int generationSeed;
    Point3D spawnPoint;
@@ -990,16 +991,14 @@ void loadTextures()
 // ================================
 // VARIABILI GLOBALI
 // ================================
-Camera camera;
-World world; // Dichiarazione della variabile globale
+World world;
 UIRenderer ui;
 bool showChunkBorder = false;
 bool showData = true;
 bool showTopFace = true;
 bool enableFaceOptimization = true;
 bool wireframeMode = false;         // Variabile globale per la modalità wireframe
-bool enableShadows = false;         // Aggiungi una variabile globale per le ombre
-bool enableFatsMode = false;        // Variabile globale per la modalità Fats
+bool enableFastMode = false;        // Variabile globale per la modalità Fats
 int lastMouseX = 0, lastMouseY = 0; // Variabili globali per tracciare la posizione precedente del mouse
 // Variabili globali per il calcolo degli FPS
 std::chrono::steady_clock::time_point lastFrameTime = std::chrono::steady_clock::now();
@@ -1069,7 +1068,7 @@ int main(int argc, char **argv)
    glDisable(GL_LIGHTING);
    glEnable(GL_TEXTURE_2D);
    loadTextures();
-   camera.reset();
+   world.camera.reset();
 
    if (loadExisting)
    {
@@ -1171,22 +1170,22 @@ void display()
    glMatrixMode(GL_MODELVIEW);
    glLoadIdentity();
 
-   float cosPitch = cos(toRadians(camera.rot.xRot));
-   float sinPitch = sin(toRadians(camera.rot.xRot));
-   float cosYaw = cos(toRadians(camera.rot.yRot));
-   float sinYaw = sin(toRadians(camera.rot.yRot));
+   float cosPitch = cos(toRadians(world.camera.rot.xRot));
+   float sinPitch = sin(toRadians(world.camera.rot.xRot));
+   float cosYaw = cos(toRadians(world.camera.rot.yRot));
+   float sinYaw = sin(toRadians(world.camera.rot.yRot));
 
-   float lookX = camera.pos.x + cosPitch * cosYaw;
-   float lookY = camera.pos.y + sinPitch;
-   float lookZ = camera.pos.z + cosPitch * sinYaw;
+   float lookX = world.camera.pos.x + cosPitch * cosYaw;
+   float lookY = world.camera.pos.y + sinPitch;
+   float lookZ = world.camera.pos.z + cosPitch * sinYaw;
 
    gluLookAt(
-       camera.pos.x, camera.pos.y, camera.pos.z,
+       world.camera.pos.x, world.camera.pos.y, world.camera.pos.z,
        lookX, lookY, lookZ,
        0.0f, 1.0f, 0.0f);
 
    // Calcola i chunk visibili entro la render_distance
-   Point2D currentChunkCoords = world.getChunkCoordinates(camera.pos);
+   Point2D currentChunkCoords = world.getChunkCoordinates(world.camera.pos);
 
    for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
    {
@@ -1333,9 +1332,9 @@ void display()
 
       // Disegna i testi sopra il rettangolo
       ui.drawText("FPS: " + std::to_string(static_cast<int>(fps)), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 15), GLUT_BITMAP_HELVETICA_12);
-      ui.drawText("Rotazione Camera: (" + std::to_string(camera.rot.xRot) + ", " + std::to_string(camera.rot.yRot) + ", " + std::to_string(camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30), GLUT_BITMAP_HELVETICA_12);
-      ui.drawText("Posizione: (" + std::to_string(camera.pos.x) + ", " + std::to_string(camera.pos.y) + ", " + std::to_string(camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45), GLUT_BITMAP_HELVETICA_12);
-      Point2D chunkCoords = world.getChunkCoordinates(camera.pos);
+      ui.drawText("Rotazione Camera: (" + std::to_string(world.camera.rot.xRot) + ", " + std::to_string(world.camera.rot.yRot) + ", " + std::to_string(world.camera.rot.zRot) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 30), GLUT_BITMAP_HELVETICA_12);
+      ui.drawText("Posizione: (" + std::to_string(world.camera.pos.x) + ", " + std::to_string(world.camera.pos.y) + ", " + std::to_string(world.camera.pos.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 45), GLUT_BITMAP_HELVETICA_12);
+      Point2D chunkCoords = world.getChunkCoordinates(world.camera.pos);
       ui.drawText("Chunk corrente: (" + std::to_string(chunkCoords.x) + "," + std::to_string(chunkCoords.z) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 60), GLUT_BITMAP_HELVETICA_12);
       ui.drawText("Seed: " + std::to_string(world.generationSeed), Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 75), GLUT_BITMAP_HELVETICA_12);
       ui.drawText("Blocco selezionato: " + blockTypeToString(selectedBlockType) + "(" + std::to_string(static_cast<int>(selectedBlockType)) + ")", Point2D(10, glutGet(GLUT_WINDOW_HEIGHT) - 90), GLUT_BITMAP_HELVETICA_12);
@@ -1390,7 +1389,7 @@ void keyboard(unsigned char key, int, int)
    float horizontalStep;
    float verticalStep;
 
-   if (enableFatsMode)
+   if (enableFastMode)
    {
       horizontalStep = 16.0f;
       verticalStep = 16.0f;
@@ -1432,38 +1431,38 @@ void keyboard(unsigned char key, int, int)
       glutPostRedisplay();
       break;
    case 'e':
-      enableFatsMode = !enableFatsMode;
+      enableFastMode = !enableFastMode;
       break;
    case 'w':
-      camera.pos.x += horizontalStep * cos(toRadians(camera.rot.yRot));
-      camera.pos.z += horizontalStep * sin(toRadians(camera.rot.yRot));
+      world.camera.pos.x += horizontalStep * cos(toRadians(world.camera.rot.yRot));
+      world.camera.pos.z += horizontalStep * sin(toRadians(world.camera.rot.yRot));
       moved = true;
       break;
    case 's':
-      camera.pos.x -= horizontalStep * cos(toRadians(camera.rot.yRot));
-      camera.pos.z -= horizontalStep * sin(toRadians(camera.rot.yRot));
+      world.camera.pos.x -= horizontalStep * cos(toRadians(world.camera.rot.yRot));
+      world.camera.pos.z -= horizontalStep * sin(toRadians(world.camera.rot.yRot));
       moved = true;
       break;
    case 'd':
-      camera.pos.x -= horizontalStep * sin(toRadians(camera.rot.yRot));
-      camera.pos.z += horizontalStep * cos(toRadians(camera.rot.yRot));
+      world.camera.pos.x -= horizontalStep * sin(toRadians(world.camera.rot.yRot));
+      world.camera.pos.z += horizontalStep * cos(toRadians(world.camera.rot.yRot));
       moved = true;
       break;
    case 'a':
-      camera.pos.x += horizontalStep * sin(toRadians(camera.rot.yRot));
-      camera.pos.z -= horizontalStep * cos(toRadians(camera.rot.yRot));
+      world.camera.pos.x += horizontalStep * sin(toRadians(world.camera.rot.yRot));
+      world.camera.pos.z -= horizontalStep * cos(toRadians(world.camera.rot.yRot));
       moved = true;
       break;
    case ' ':
-      camera.pos.y += verticalStep;
+      world.camera.pos.y += verticalStep;
       moved = true;
       break;
    case 'S':
-      camera.pos.y -= verticalStep;
+      world.camera.pos.y -= verticalStep;
       moved = true;
       break;
    case 'r':
-      camera.reset();
+      world.camera.reset();
       moved = true;
       break;
    case 'b':
@@ -1494,7 +1493,7 @@ void keyboard(unsigned char key, int, int)
 
    if (moved)
    {
-      world.updateVisibleChunks(camera, RENDER_DISTANCE); // Aggiorna i chunk visibili
+      world.updateVisibleChunks(world.camera, RENDER_DISTANCE); // Aggiorna i chunk visibili
    }
 
    glutPostRedisplay();
@@ -1538,11 +1537,11 @@ void mouseMotion(int x, int y)
       int deltaX = x - lastMouseX;
       int deltaY = y - lastMouseY;
 
-      camera.rot.yRot += static_cast<float>(deltaX) * 0.25f; // Rotazione orizzontale
-      camera.rot.xRot -= static_cast<float>(deltaY) * 0.25f; // Rotazione verticale
+      world.camera.rot.yRot += static_cast<float>(deltaX) * 0.25f; // Rotazione orizzontale
+      world.camera.rot.xRot -= static_cast<float>(deltaY) * 0.25f; // Rotazione verticale
 
       // Limita la rotazione verticale
-      camera.rot.xRot = std::max(-89.9f, std::min(89.9f, camera.rot.xRot));
+      world.camera.rot.xRot = std::max(-89.9f, std::min(89.9f, world.camera.rot.xRot));
    }
 
    lastMouseX = x;
@@ -1591,20 +1590,20 @@ void mouseFunc(int button, int state, int x, int y)
 void updateBlockHighlight()
 {
    // Calcola la direzione di vista della telecamera
-   float cosPitch = cos(toRadians(camera.rot.xRot));
-   float sinPitch = sin(toRadians(camera.rot.xRot));
-   float cosYaw = cos(toRadians(camera.rot.yRot));
-   float sinYaw = sin(toRadians(camera.rot.yRot));
+   float cosPitch = cos(toRadians(world.camera.rot.xRot));
+   float sinPitch = sin(toRadians(world.camera.rot.xRot));
+   float cosYaw = cos(toRadians(world.camera.rot.yRot));
+   float sinYaw = sin(toRadians(world.camera.rot.yRot));
    Point3D viewDir(cosPitch * cosYaw, sinPitch, cosPitch * sinYaw);
 
    const float step = 0.1f;
    const float maxDistance = 5.0f;
    bool foundSurface = false;
-   Point3D lastAirPos = camera.pos;
+   Point3D lastAirPos = world.camera.pos;
 
    for (float t = step; t <= maxDistance; t += step)
    {
-      Point3D currentPos = camera.pos + viewDir * t;
+      Point3D currentPos = world.camera.pos + viewDir * t;
       int blockX = static_cast<int>(std::round(currentPos.x));
       int blockY = static_cast<int>(std::round(currentPos.y));
       int blockZ = static_cast<int>(std::round(currentPos.z));
