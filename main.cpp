@@ -1026,7 +1026,7 @@ int main(int argc, char **argv)
    for (int i = 1; i < argc; i++)
    {
       std::string arg = argv[i];
-      if (arg == "--seed" && i + 1 < argc)
+      if (arg == "--setseed" && i + 1 < argc)
       {
          try
          {
@@ -1035,15 +1035,15 @@ int main(int argc, char **argv)
          }
          catch (const std::exception &)
          {
-            std::cerr << "Invalid seed value. Using default seed (1)." << std::endl;
+            std::cerr << "Seed non valido. Utilizzo il seed predefinito (1)." << std::endl;
          }
       }
-      else if (arg == "--world" && i + 1 < argc)
+      else if (arg == "--newworld" && i + 1 < argc)
       {
          worldName = argv[i + 1];
          i++; // Skip next argument
       }
-      else if (arg == "--open" && i + 1 < argc)
+      else if (arg == "--openworld" && i + 1 < argc)
       {
          worldName = argv[i + 1];
          loadExisting = true;
@@ -1059,7 +1059,7 @@ int main(int argc, char **argv)
    GLenum err = glewInit();
    if (err != GLEW_OK)
    {
-      std::cerr << "GLEW failed to initialize: " << glewGetErrorString(err) << std::endl;
+      std::cerr << "Inizializzazione di GLEW fallita: " << glewGetErrorString(err) << std::endl;
       return EXIT_FAILURE;
    }
 
@@ -1076,7 +1076,7 @@ int main(int argc, char **argv)
       // Try to load existing world
       if (!world.loadWorld(worldName))
       {
-         std::cerr << "Failed to load world. Exiting." << std::endl;
+         std::cerr << "Caricamento del mondo non riuscito." << std::endl;
          return EXIT_FAILURE;
       }
    }
