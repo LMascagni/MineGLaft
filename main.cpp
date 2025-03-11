@@ -7,6 +7,7 @@
 #include <vector>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <array>
 #include <iostream>
@@ -16,6 +17,8 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
+
 namespace fs = std::filesystem;
 
 // Aggiungi subito dopo gli include per definire GL_CLAMP_TO_EDGE se non definito
@@ -32,7 +35,7 @@ namespace fs = std::filesystem;
 // ================================
 const int CHUNK_SIZE = 16;
 const int CHUNK_HEIGHT = 256;
-const int RENDER_DISTANCE = 32;
+const int RENDER_DISTANCE = 8;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -319,6 +322,8 @@ public:
       blocks.resize(CHUNK_SIZE, std::vector<std::vector<Block>>(CHUNK_SIZE, std::vector<Block>(CHUNK_HEIGHT, Block())));
    }
 
+   
+   
    // Funzione per generare il terreno del chunk
    void generate(const PerlinNoise &noise)
    {
@@ -684,7 +689,63 @@ public:
    // Puoi estendere questa funzione per generare nuovi chunk man mano che la camera si muove.
    void updateVisibleChunks(const Camera &camera, int renderDistance)
    {
-      // Attualmente non fa nulla in quanto si usa un chunk di test fisso.
+      Point2D currentChunkCoords = getChunkCoordinates(camera.pos);
+      std::unordered_set<Point2D> newChunkCoords;
+
+      for (int dx = -renderDistance; dx <= renderDistance; ++dx)
+      {
+         for (int dz = -renderDistance; dz <= renderDistance; ++dz)
+         {
+            Point2D chunkCoords(currentChunkCoords.x + dx, currentChunkCoords.z + dz);
+            newChunkCoords.insert(chunkCoords);
+
+            if (chunksMap.find(chunkCoords) == chunksMap.end())
+            {
+               Chunk chunk(chunkCoords);
+               if (loadChunk(chunkCoords, chunk))
+               {
+                  chunksMap[chunkCoords] = chunk;
+               }
+               else
+               {
+                  generateChunk(chunkCoords);                  
+               }
+            }
+         }
+      }
+
+      // Rimuovi i chunk che non sono più necessari
+      for (auto it = chunksMap.begin(); it != chunksMap.end();)
+      {
+         if (newChunkCoords.find(it->first) == newChunkCoords.end())
+         {
+            unloadChunk(it->first);
+            it = chunksMap.erase(it);
+         }
+         else
+         {
+            ++it;
+         }
+      }
+   }
+
+   // Metodo per generare un singolo chunk
+   void generateChunk(const Point2D &pos)
+   {
+      PerlinNoise noise(generationSeed);
+      Chunk chunk(pos);
+      chunk.generate(noise);
+      chunk.generateMesh();
+      chunksMap[pos] = chunk;
+      saveChunk(pos, chunk);
+   }
+
+   void unloadChunk(const Point2D &pos)
+   {
+      // Dealloca la memoria del chunk se necessario
+
+
+      // In questo caso, non c'è nulla di specifico da fare, ma puoi aggiungere logica qui se necessario
    }
 
    // Metodo per generare una griglia di chunk
@@ -807,12 +868,46 @@ public:
                }
                chunk.generateMesh();
                chunksMap[chunkPos] = chunk;
-               std::cout << "Chunk " << x << ", " << z << " caricato." << std::endl;
+               //std::cout << "Chunk " << x << ", " << z << " caricato." << std::endl;
             }
          }
       }
 
-      std::cout << "Sono stati caricati " << chunksMap.size() << " chunks da '" << worldName << "'" << std::endl;
+      //std::cout << "Sono stati caricati " << chunksMap.size() << " chunks da '" << worldName << "'" << std::endl;
+      return true;
+   }
+
+   bool loadChunk(const Point2D &pos, Chunk &chunk)
+   {
+      if (currentWorldName.empty())
+         return false;
+
+      fs::path worldPath = fs::path("worlds") / currentWorldName;
+      std::stringstream chunkFileName;
+      chunkFileName << "chunk_" << pos.x << "_" << pos.z << ".dat";
+
+      std::ifstream chunkFile(worldPath / "chunks" / chunkFileName.str(), std::ios::binary);
+      if (!chunkFile.is_open())
+         return false;
+
+      for (int x = 0; x < CHUNK_SIZE; x++)
+      {
+         for (int z = 0; z < CHUNK_SIZE; z++)
+         {
+            for (int y = 0; y < CHUNK_HEIGHT; y++)
+            {
+               int blockType;
+               chunkFile.read(reinterpret_cast<char *>(&blockType), sizeof(int));
+               chunk.blocks[x][z][y].type = static_cast<BlockType>(blockType);
+               chunk.blocks[x][z][y].pos = Point3D(
+                   pos.x * CHUNK_SIZE + x,
+                   y,
+                   pos.z * CHUNK_SIZE + z);
+            }
+         }
+      }
+      chunkFile.close();
+      chunk.generateMesh();
       return true;
    }
 };
@@ -1052,7 +1147,7 @@ int main(int argc, char **argv)
 
    glutInit(&argc, argv);
    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-   glutInitWindowSize(1200, 1000);
+   glutInitWindowSize(400, 300);
    glutCreateWindow("MineGLaft");
 
    GLenum err = glewInit();
@@ -1085,7 +1180,7 @@ int main(int argc, char **argv)
       world.generationSeed = seed;
       world.initializeWorld(worldName);
       PerlinNoise noise(world.generationSeed);
-      world.generateChunkGrid(32, noise);
+      world.generateChunkGrid(12, noise);
    }
 
    // Rest of initialization
@@ -1184,59 +1279,48 @@ void display()
        lookX, lookY, lookZ,
        0.0f, 1.0f, 0.0f);
 
-   // Calcola i chunk visibili entro la render_distance
-   Point2D currentChunkCoords = world.getChunkCoordinates(world.camera.pos);
+   // Aggiorna i chunk visibili
+   world.updateVisibleChunks(world.camera, RENDER_DISTANCE);
 
-   for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
+   for (const auto &chunkPair : world.chunksMap)
    {
-      for (int j = -RENDER_DISTANCE; j <= RENDER_DISTANCE; j++)
+      const Chunk &chunk = chunkPair.second;
+      chunk.drawTextured();
+
+      if (showChunkBorder)
       {
-         Point2D chunkPos(currentChunkCoords.x + i, currentChunkCoords.z + j);
+         // Salva lo stato corrente del colore e dei parametri delle linee
+         glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
 
-         // Cerca il chunk nella mappa
-         auto it = world.chunksMap.find(chunkPos);
-         if (it != world.chunksMap.end())
-         {
+         glColor3f(0.0f, 0.0f, 0.0f); // Imposta il colore del bordo a nero
+         glLineWidth(2.0f);
+         glBegin(GL_LINES);
+         float lineHeight = static_cast<float>(CHUNK_HEIGHT);
 
-            // Utilizza il nuovo metodo per disegnare con textures
-            it->second.drawTextured();
+         // Calcola le coordinate globali del bordo del chunk
+         float globX = chunk.pos.x * CHUNK_SIZE;
+         float globZ = chunk.pos.z * CHUNK_SIZE;
+         float xMin = globX - 0.5f;
+         float xMax = globX + CHUNK_SIZE - 0.5f;
+         float zMin = globZ - 0.5f;
+         float zMax = globZ + CHUNK_SIZE - 0.5f;
 
-            if (showChunkBorder)
-            {
-               // Salva lo stato corrente del colore e dei parametri delle linee
-               glPushAttrib(GL_CURRENT_BIT | GL_LINE_BIT);
+         // Disegna i 4 pilastri verticali agli angoli
+         glVertex3f(xMin, 0.0f, zMin);
+         glVertex3f(xMin, lineHeight, zMin);
 
-               glColor3f(0.0f, 0.0f, 0.0f); // Imposta il colore del bordo a nero
-               glLineWidth(2.0f);
-               glBegin(GL_LINES);
-               float lineHeight = static_cast<float>(CHUNK_HEIGHT);
+         glVertex3f(xMax, 0.0f, zMin);
+         glVertex3f(xMax, lineHeight, zMin);
 
-               // Calcola le coordinate globali del bordo del chunk
-               float globX = it->second.pos.x * CHUNK_SIZE;
-               float globZ = it->second.pos.z * CHUNK_SIZE;
-               float xMin = globX - 0.5f;
-               float xMax = globX + CHUNK_SIZE - 0.5f;
-               float zMin = globZ - 0.5f;
-               float zMax = globZ + CHUNK_SIZE - 0.5f;
+         glVertex3f(xMax, 0.0f, zMax);
+         glVertex3f(xMax, lineHeight, zMax);
 
-               // Disegna i 4 pilastri verticali agli angoli
-               glVertex3f(xMin, 0.0f, zMin);
-               glVertex3f(xMin, lineHeight, zMin);
+         glVertex3f(xMin, 0.0f, zMax);
+         glVertex3f(xMin, lineHeight, zMax);
+         glEnd();
 
-               glVertex3f(xMax, 0.0f, zMin);
-               glVertex3f(xMax, lineHeight, zMin);
-
-               glVertex3f(xMax, 0.0f, zMax);
-               glVertex3f(xMax, lineHeight, zMax);
-
-               glVertex3f(xMin, 0.0f, zMax);
-               glVertex3f(xMin, lineHeight, zMax);
-               glEnd();
-
-               // Ripristina lo stato precedente (incluso il colore corrente)
-               glPopAttrib();
-            }
-         }
+         // Ripristina lo stato precedente (incluso il colore corrente)
+         glPopAttrib();
       }
    }
 
@@ -1317,8 +1401,8 @@ void display()
       glBegin(GL_QUADS);
       glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT) - 100);   // Alto sinistro
       glVertex2f(0, glutGet(GLUT_WINDOW_HEIGHT));         // Basso sinistro
-      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT));       // Basso destro
-      glVertex2f(300, glutGet(GLUT_WINDOW_HEIGHT) - 100); // Alto destro
+      glVertex2f(350, glutGet(GLUT_WINDOW_HEIGHT));       // Basso destro
+      glVertex2f(350, glutGet(GLUT_WINDOW_HEIGHT) - 100); // Alto destro
       glEnd();
 
       // Riabilita lo Z-buffer dopo aver disegnato il rettangolo
