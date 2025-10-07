@@ -1,0 +1,1 @@
+g++ -Wall main.cpp -o aa  -lfreeglut -lglew32 -lopengl32 -lglu32 -Ilib/glad/include
